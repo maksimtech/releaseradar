@@ -1,0 +1,65 @@
+name: Publish to PyPI
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+jobs:
+  build-and-publish:
+    name: Build and publish to PyPI
+    runs-on: ubuntu-26.04
+    environment:
+      name: pypi
+      url: https://pypi.org/p/releaseradar
+    permissions:
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install build dependencies
+        run: pip install --upgrade build hatchling  # NOSONAR
+      - name: Build package
+        run: python -m build
+      - name: Import GPG key
+        run: |
+          echo "${{ secrets.GPG_PRIVATE_KEY }}" > /tmp/gpg_key.asc
+          gpg --batch --import /tmp/gpg_key.asc
+          rm /tmp/gpg_key.asc
+          echo "${{ secrets.GPG_PASSPHRASE }}" | gpg --batch --passphrase-fd 0 --pinentry-mode loopback --list-secret-keys
+      - name: Sign packages
+        run: |
+          for f in dist/*; do
+            echo "${{ secrets.GPG_PASSPHRASE }}" | gpg --batch --passphrase-fd 0 \
+              --pinentry-mode loopback \
+              --armor --detach-sign "$f"
+          done
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          verify-metadata: false
+
+      - name: Extract version
+        id: version
+        env:
+          RAW: ${{ github.ref_name }}
+        run: |
+          STRIPPED="${RAW#v}"
+          NORMALIZED=$(python3 -c "parts='${STRIPPED}'.split('.'); print('.'.join(str(int(p)) for p in parts))")
+          echo "VERSION=${NORMALIZED}" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for the index to catch up
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        run: bash .github/scripts/wait_for_pypi.sh releaseradar "$VERSION" 30 20 0
+
+      - name: Check the published wheel installs and runs
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          python -m venv "${RUNNER_TEMP}/verify"
+          "${RUNNER_TEMP}/verify/bin/pip" install --no-cache-dir "releaseradar==${VERSION}"
+          "${RUNNER_TEMP}/verify/bin/releaseradar" --version

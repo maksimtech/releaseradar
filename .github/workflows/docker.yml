@@ -1,0 +1,81 @@
+name: Build and Push Docker Image
+on:
+  push:
+    tags:
+      - 'v*'
+  schedule:
+    # Weekly rebuild of `latest` from the newest tag so the image picks up
+    # Debian's patches without waiting for a new release.
+    - cron: '0 5 * * 1'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g. v2026.43.0)'
+        required: true
+        default: 'v2026.43.0'
+permissions:
+  contents: read
+  security-events: write
+jobs:
+  docker:
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+      - name: Login to Docker Hub
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Extract version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            RAW="${{ github.event.inputs.version }}"
+          elif [ "${{ github.event_name }}" = "schedule" ]; then
+            RAW=$(git tag --list 'v*' --sort=-v:refname | head -n 1)
+          else
+            RAW="${GITHUB_REF#refs/tags/}"
+          fi
+          echo "VERSION=${RAW}" >> $GITHUB_OUTPUT
+          STRIPPED="${RAW#v}"
+          NORMALIZED=$(python3 -c "parts='${STRIPPED}'.split('.'); print('.'.join(str(int(p)) for p in parts))")
+          echo "PIP_VERSION=${NORMALIZED}" >> $GITHUB_OUTPUT
+      - name: Stand on the tag being built
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        run: git checkout --detach "refs/tags/${VERSION}"
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            maksimtech/releaseradar:latest
+            ${{ github.event_name != 'schedule' && format('maksimtech/releaseradar:{0}', steps.version.outputs.VERSION) || '' }}
+          build-args: |
+            RELEASERADAR_SOURCE=local
+          pull: true
+          no-cache: ${{ github.event_name == 'schedule' }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Docker Scout CVE scan
+        uses: docker/scout-action@v1
+        with:
+          command: cves
+          image: maksimtech/releaseradar:${{ github.event_name == 'schedule' && 'latest' || steps.version.outputs.VERSION }}
+          only-severities: critical,high
+          exit-code: false
+          sarif-file: scout-results.sarif
+      - name: Upload Scout SARIF
+        uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: scout-results.sarif
