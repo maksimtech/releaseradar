@@ -78,3 +78,14 @@ fix adds the `acl_*_at()` ABI of 2.4.0. A local TOCTOU in recursive \
 setfacl/chacl; this image calls neither.
 """
 review_by = "2026-11-30"
+
+[[exception]]
+id = "CVE-2026-85091"
+source = "Docker Scout"
+where = "zlib 1:1.3.dfsg+really1.3.1-1, python slim-trixie base image"
+why = """
+The same zlib flaw as SNYK-DEBIAN13-ZLIB-19520500 above, reported by the other \
+scanner on the first scan of maksimtech/releaseradar:latest (2026.1) on \
+2026-10-10. The gate matches by id, so one flaw needs an entry per scanner.
+"""
+review_by = "2026-12-31"
