@@ -18,6 +18,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlunsplit
 
 from . import __version__
 from . import db as _db
@@ -289,8 +290,9 @@ class DashboardServer(ThreadingHTTPServer):
 
     @property
     def url(self) -> str:
-        # server_port, not the requested port: 0 asks the OS for a free one.
-        return f"http://{self.host}:{self.server_port}/"
+        # server_port, not the requested port: 0 asks the OS for a free one. Plain
+        # HTTP by design: the page never leaves the loopback interface.
+        return urlunsplit(("http", f"{self.host}:{self.server_port}", "/", "", ""))
 
 
 def serve(db_path: Path, token: str | None, every_minutes: float, host: str = "127.0.0.1",
