@@ -70,6 +70,21 @@ export GITHUB_TOKEN=ghp_your_token_here
 When the quota runs out, `sync` says so, says when it resets, and exits 1;
 nothing is written for a repository whose sync was refused.
 
+## Dashboard
+
+```bash
+releaseradar web                 # http://127.0.0.1:8765/, syncs every 15 minutes
+releaseradar web --every 5       # every 5 minutes
+releaseradar web --port 9000 --no-browser
+```
+
+One local page: the tracked repositories with their open counts and latest
+release, the feed of what changed (new entries highlighted as they arrive), the
+last and next sync, a *Sync now* button, and the poller's warnings and errors.
+It runs the same `sync` as the CLI, on a timer, with the same database and
+the same `GITHUB_TOKEN`. Standard library only, bound to 127.0.0.1, no login:
+it is for the machine it runs on.
+
 ## Configuration
 
 | Variable | Default | Purpose |
@@ -137,6 +152,7 @@ releaseradar events [--limit N]     Show the event log, newest first
 releaseradar events --pending       Show unnotified events only
 releaseradar notify [--json]        Print unnotified events, then mark them notified
 releaseradar notify --dry-run       Print without marking
+releaseradar web [--every N]        Local dashboard, syncing every N minutes (default 15)
 releaseradar mcp                    Run the MCP server on stdio
 ```
 

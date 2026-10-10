@@ -8,6 +8,18 @@ the year is the generation shared by the five Radar and the count is this one's 
 ## [Unreleased]
 
 
+## [2026.5] - 2026-10-10
+
+### Added
+- **`releaseradar web`: a local dashboard.** One page on 127.0.0.1 with the
+  tracked repositories, the feed of what changed (new entries highlighted as
+  they arrive), last and next sync, a *Sync now* button, and the poller's
+  warnings and errors. A thread runs the same `sync` as the CLI every
+  `--every` minutes (default 15). Standard library only — `http.server` and a
+  thread — so the base install stays at 16 distributions; no login, because it
+  is bound to the loopback address and nothing else.
+
+
 ## [2026.4] - 2026-10-10
 
 The first sync of `python/cpython` took two minutes behind a spinner that said
@@ -127,7 +139,8 @@ traffic before anything shipped; what follows is what that review changed.
   named three of the five Radar and a Claude configuration path that does not
   exist.
 
-[Unreleased]: https://github.com/maksimtech/releaseradar/compare/v2026.4...HEAD
+[Unreleased]: https://github.com/maksimtech/releaseradar/compare/v2026.5...HEAD
+[2026.5]: https://github.com/maksimtech/releaseradar/compare/v2026.4...v2026.5
 [2026.4]: https://github.com/maksimtech/releaseradar/compare/v2026.3...v2026.4
 [2026.3]: https://github.com/maksimtech/releaseradar/compare/v2026.2...v2026.3
 [2026.2]: https://github.com/maksimtech/releaseradar/compare/v2026.1...v2026.2
