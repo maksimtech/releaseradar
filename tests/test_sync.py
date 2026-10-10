@@ -254,3 +254,68 @@ class TestRepositoriesWithoutPullRequests:
         track(db_path, "maksimtech", "does-not-exist-xyz")
         with pytest.raises(gh.GitHubError, match="not found"):
             sync_repo("maksimtech", "does-not-exist-xyz", db_path=db_path)
+
+
+class TestProgress:
+    """The first sync of python/cpython took two minutes behind a spinner that said
+    "Syncing all tracked repos…" and nothing else. Now it says how far it is."""
+
+    def test_the_first_sync_says_how_much_of_the_open_set_it_has(self, db_path, github):
+        github.get(f"{API}/repos/torvalds/linux").mock(return_value=replay("gh_linux_repo.json"))
+        route_repo(github, "torvalds", "linux",
+                   "gh_linux_issues_all.json", "gh_linux_pulls_404.json", "gh_linux_releases.json")
+        track(db_path, "torvalds", "linux")
+        lines: list[str] = []
+
+        sync_repo("torvalds", "linux", db_path=db_path, on_progress=lines.append)
+
+        expected = recorded("gh_linux_repo.json")["body"]["open_issues_count"]
+        assert lines, "no progress at all — not even the opening line"
+        assert all(line.startswith("torvalds/linux: ") for line in lines)
+        assert any(f"of ~{expected:,} open issues and pull requests" in line for line in lines)
+        assert all("requests so far" in line for line in lines)
+
+    def test_later_syncs_count_without_a_total_and_cost_no_extra_request(self, db_path, github):
+        routes = route_repo(github, "psf", "requests", "gh_requests_issues_open_5.json",
+                            "gh_requests_pulls_open_5.json", "gh_codecov-mcp_releases.json")
+        track(db_path, "psf", "requests")
+        sync_repo("psf", "requests", db_path=db_path)
+        lines: list[str] = []
+
+        sync_repo("psf", "requests", db_path=db_path, on_progress=lines.append)
+
+        assert lines and all("of ~" not in line for line in lines)
+        assert any("issues" in line and "pull requests" in line for line in lines)
+        assert not any(c.request.url.path == "/repos/psf/requests" for c in github.calls)
+        assert routes["issues"].called
+
+    def test_without_a_listener_nothing_extra_is_asked(self, db_path, github):
+        route_repo(github, "maksimtech", "codecov-mcp",
+                   "gh_codecov-mcp_issues_all.json", "gh_codecov-mcp_pulls_all.json", "gh_codecov-mcp_releases.json")
+        track(db_path, "maksimtech", "codecov-mcp")
+        sync_repo("maksimtech", "codecov-mcp", db_path=db_path)
+        assert not any(c.request.url.path == "/repos/maksimtech/codecov-mcp" for c in github.calls)
+
+    def test_the_three_walks_run_side_by_side(self, db_path, github):
+        """Each walk is a chain of round trips; three chains in sequence are three
+        times the wait. The replay answers after a pause, and the sync finishes
+        in well under three pauses."""
+        import time
+
+        def slow(name):
+            def respond(request):
+                time.sleep(0.4)
+                return replay(name)
+            return respond
+
+        base = f"{API}/repos/maksimtech/cookieradar"
+        github.get(f"{base}/issues").mock(side_effect=slow("gh_codecov-mcp_issues_all.json"))
+        github.get(f"{base}/pulls").mock(side_effect=slow("gh_codecov-mcp_pulls_all.json"))
+        github.get(f"{base}/releases").mock(side_effect=slow("gh_cookieradar_releases.json"))
+        track(db_path, "maksimtech", "cookieradar")
+
+        started = time.perf_counter()
+        sync_repo("maksimtech", "cookieradar", db_path=db_path)
+        elapsed = time.perf_counter() - started
+
+        assert elapsed < 1.0, f"{elapsed:.2f}s: the walks ran one after another"

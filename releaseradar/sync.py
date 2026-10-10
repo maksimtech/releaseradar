@@ -10,7 +10,9 @@ else, and is not an event either.
 from __future__ import annotations
 
 import json
+import threading
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -35,10 +37,46 @@ def _pr_kind(state: str) -> str:
 
 
 Warn = Callable[[str], None]
+Progress = Callable[[str], None]
+
+
+class _Counter:
+    """What the three walks of one repository have fetched so far, for the
+    progress line. Each walk reports from its own thread; the line is built
+    under a lock and handed to the caller whole."""
+
+    def __init__(self, label: str, expected: int | None, report: Progress | None) -> None:
+        self.label = label
+        self.expected = expected
+        self.report = report
+        self.counts = {"issues": 0, "pull requests": 0, "releases": 0}
+        self.pages = {"issues": 0, "pull requests": 0, "releases": 0}
+        self._lock = threading.Lock()
+
+    def on_page(self, kind: str) -> gh.OnPage:
+        def update(fetched: int, pages: int) -> None:
+            if self.report is None:
+                return
+            with self._lock:
+                self.counts[kind] = fetched
+                self.pages[kind] = pages
+                self.report(self.line())
+        return update
+
+    def line(self) -> str:
+        done = self.counts["issues"] + self.counts["pull requests"]
+        requests = sum(self.pages.values())
+        if self.expected:
+            head = f"{self.label}: {done:,} of ~{self.expected:,} open issues and pull requests"
+        else:
+            head = (f"{self.label}: {self.counts['issues']:,} issues, "
+                    f"{self.counts['pull requests']:,} pull requests")
+        return f"{head}, {self.counts['releases']:,} releases — {requests} requests so far…"
 
 
 def _pull_requests_or_none(owner: str, name: str, token: str | None, since: str | None,
-                           warn: Warn | None, state: str = "all") -> list[dict]:
+                           warn: Warn | None, state: str = "all",
+                           on_page: gh.OnPage | None = None) -> list[dict]:
     """The pull requests, or an empty list for a repository that has none to list.
 
     GitHub answers 404 to every `/pulls` query of torvalds/linux — pull requests
@@ -49,7 +87,7 @@ def _pull_requests_or_none(owner: str, name: str, token: str | None, since: str 
     repository is gone, that is the error.
     """
     try:
-        return gh.fetch_pull_requests(owner, name, token, since=since, state=state)
+        return gh.fetch_pull_requests(owner, name, token, since=since, state=state, on_page=on_page)
     except gh.GitHubError as exc:
         if exc.status != 404 or not gh.repo_exists(owner, name, token):
             raise
@@ -60,14 +98,17 @@ def _pull_requests_or_none(owner: str, name: str, token: str | None, since: str 
 
 
 def sync_repo(owner: str, name: str, token: str | None = None,
-              db_path: Path | None = None, on_warning: Warn | None = None) -> list[dict]:
+              db_path: Path | None = None, on_warning: Warn | None = None,
+              on_progress: Progress | None = None) -> list[dict]:
     """
     Pull what changed on GitHub since the last sync of one tracked repo, persist
     it, and return the events that change produced.
 
-    `on_warning` receives what was synced less than fully and why. Raises
-    `NotTracked` for a repository that was never `track`ed and `gh.GitHubError`
-    for anything GitHub refused to answer.
+    `on_warning` receives what was synced less than fully and why; `on_progress`
+    receives a one-line account of how far the download has got, after every
+    page, from whichever thread fetched it. Raises `NotTracked` for a repository
+    that was never `track`ed and `gh.GitHubError` for anything GitHub refused to
+    answer.
     """
     database = _db.open_db(db_path or _db._DEFAULT_DB)
     repo = database.get_repo(owner, name)
@@ -84,9 +125,27 @@ def sync_repo(owner: str, name: str, token: str | None = None,
     # later sync asks for everything updated since the last one, closed included,
     # which is where the transitions are.
     state = "open" if seeding else "all"
-    issues = gh.fetch_issues(owner, name, token, since=since, state=state)
-    pulls = _pull_requests_or_none(owner, name, token, since, on_warning, state=state)
-    releases = gh.fetch_releases(owner, name, token)
+    # Only a first sync with somebody watching pays the one extra request that
+    # tells the progress line how far it is from done.
+    expected = gh.open_items(owner, name, token) if seeding and on_progress is not None else None
+    counter = _Counter(f"{owner}/{name}", expected, on_progress)
+    if on_progress is not None:
+        on_progress(counter.line())
+
+    # The three walks are independent and each one is a chain of round trips to
+    # GitHub, so they run side by side: python/cpython's first sync went from
+    # 121 s to about half on 2026-10-10. Errors come back through the futures in
+    # the order the walks are named, so a missing repository is reported by the
+    # issues walk before the pull-request walk gets to ask about it.
+    with ThreadPoolExecutor(max_workers=3, thread_name_prefix="releaseradar-fetch") as pool:
+        issues_future = pool.submit(gh.fetch_issues, owner, name, token, since=since, state=state,
+                                    on_page=counter.on_page("issues"))
+        pulls_future = pool.submit(_pull_requests_or_none, owner, name, token, since, on_warning,
+                                   state=state, on_page=counter.on_page("pull requests"))
+        releases_future = pool.submit(gh.fetch_releases, owner, name, token, on_page=counter.on_page("releases"))
+        issues = issues_future.result()
+        pulls = pulls_future.result()
+        releases = releases_future.result()
 
     new_events: list[dict] = []
     with database.transaction():
@@ -143,8 +202,8 @@ def sync_repo(owner: str, name: str, token: str | None = None,
     return new_events
 
 
-def sync_all(token: str | None = None, db_path: Path | None = None, on_warning: Warn | None = None
-             ) -> tuple[dict[str, list[dict]], dict[str, str]]:
+def sync_all(token: str | None = None, db_path: Path | None = None, on_warning: Warn | None = None,
+             on_progress: Progress | None = None) -> tuple[dict[str, list[dict]], dict[str, str]]:
     """Sync every tracked repo. Returns ({owner/name: [events]}, {owner/name: error}).
 
     One repository GitHub refuses does not stop the others; its message is
@@ -156,7 +215,10 @@ def sync_all(token: str | None = None, db_path: Path | None = None, on_warning: 
     for row in database.list_repos():
         key = f"{row['owner']}/{row['name']}"
         try:
-            results[key] = sync_repo(row["owner"], row["name"], token=token, db_path=db_path, on_warning=on_warning)
+            if on_progress is not None:
+                on_progress(f"{key}: asking GitHub what changed…")
+            results[key] = sync_repo(row["owner"], row["name"], token=token, db_path=db_path,
+                                     on_warning=on_warning, on_progress=on_progress)
         except gh.GitHubError as exc:
             errors[key] = str(exc)
     return results, errors

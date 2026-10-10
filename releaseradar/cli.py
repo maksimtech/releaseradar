@@ -10,6 +10,7 @@ from typing import Annotated
 import typer
 from rich import print as rprint
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
 from . import __version__
@@ -163,8 +164,9 @@ def sync(
     if repo:
         owner, name = _split(repo)
         try:
-            with console.status(f"Syncing {owner}/{name}…"):
-                events = sync_repo(owner, name, token=_token(), db_path=_db_path(), on_warning=warnings.append)
+            with console.status(f"Syncing {owner}/{name}…") as status:
+                events = sync_repo(owner, name, token=_token(), db_path=_db_path(), on_warning=warnings.append,
+                                   on_progress=lambda line: status.update(escape(line)))
         except (NotTracked, gh.GitHubError) as exc:
             _fail(str(exc))
         _print_warnings(warnings)
@@ -175,8 +177,9 @@ def sync(
     if not database.list_repos():
         rprint("[dim]Nothing to sync. Add a repo with [bold]releaseradar track[/bold].[/dim]")
         return
-    with console.status("Syncing all tracked repos…"):
-        results, errors = sync_all(token=_token(), db_path=_db_path(), on_warning=warnings.append)
+    with console.status("Syncing all tracked repos…") as status:
+        results, errors = sync_all(token=_token(), db_path=_db_path(), on_warning=warnings.append,
+                                   on_progress=lambda line: status.update(escape(line)))
     _print_warnings(warnings)
     for key, message in errors.items():
         rprint(f"[red]✗ {key}:[/red] {message}")
