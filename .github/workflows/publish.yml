@@ -60,10 +60,24 @@ jobs:
           VERSION: ${{ steps.version.outputs.VERSION }}
         run: bash .github/scripts/wait_for_pypi.sh releaseradar "$VERSION" 30 20 45
 
+      # Retried, because the wait above is answered by one PyPI edge and this
+      # install by another: on v2026.2 and again on v2026.4 — with the 45 s grace
+      # in place — the fresh venv was told "from versions: 2026.1, 2026.2,
+      # 2026.3" a minute after the wait had seen 2026.4. The upload had
+      # succeeded both times; only this check went red. Ten attempts, half a
+      # minute apart, is five minutes of patience for a CDN, not a verdict on
+      # the release.
       - name: Check the published wheel installs and runs
         env:
           VERSION: ${{ steps.version.outputs.VERSION }}
         run: |
           python -m venv "${RUNNER_TEMP}/verify"
-          "${RUNNER_TEMP}/verify/bin/pip" install --no-cache-dir "releaseradar==${VERSION}"
+          for attempt in $(seq 1 10); do
+            if "${RUNNER_TEMP}/verify/bin/pip" install --no-cache-dir "releaseradar==${VERSION}"; then
+              break
+            fi
+            [ "$attempt" -lt 10 ] || { echo "releaseradar==${VERSION} not installable after ${attempt} attempts" >&2; exit 1; }
+            echo "attempt ${attempt}: the index answering this install does not list ${VERSION} yet; retrying in 30 s"
+            sleep 30
+          done
           "${RUNNER_TEMP}/verify/bin/releaseradar" --version
