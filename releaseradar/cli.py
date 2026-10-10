@@ -26,6 +26,10 @@ console = Console()
 
 _TOKEN_ENV = "GITHUB_TOKEN"
 
+# Printed through rich, where `[mcp]` is a style tag and disappears: the one
+# install command in the message is the one that would vanish without escaping.
+MCP_MISSING = r"the MCP server needs the `mcp` package: pip install 'releaseradar\[mcp]'."
+
 _ICONS = {
     "issue_opened": "🐛",
     "issue_closed": "✅",
@@ -295,7 +299,7 @@ def mcp() -> None:
     try:
         from .mcp_server import main as mcp_main
     except ImportError:
-        _fail("the MCP server needs the `mcp` package: pip install 'releaseradar[mcp]'.")
+        _fail(MCP_MISSING)
     mcp_main()
 
 

@@ -7,6 +7,10 @@ the year is the generation shared by the five Radar and the count is this one's 
 
 ## [Unreleased]
 
+### Fixed
+- The hint printed when `releaseradar mcp` runs without the extra said
+  `pip install 'releaseradar'`: rich had taken `[mcp]` for a style tag. Escaped.
+
 
 ## [2026.1] - 2026-10-10
 

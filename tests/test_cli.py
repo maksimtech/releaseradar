@@ -204,6 +204,19 @@ class TestNotify:
 
 
 class TestMcpCommand:
+    def test_the_install_hint_survives_rich_markup(self):
+        """Seen on the first PyPI install: `pip install 'releaseradar[mcp]'` came out as
+        `pip install 'releaseradar'`, rich having eaten `[mcp]` as a style tag."""
+        from io import StringIO
+
+        from rich.console import Console
+
+        from releaseradar.cli import MCP_MISSING
+
+        out = StringIO()
+        Console(file=out, width=200, force_terminal=False).print(MCP_MISSING)
+        assert "pip install 'releaseradar[mcp]'" in out.getvalue()
+
     def test_help_lists_the_mcp_command(self):
         result = runner.invoke(app, ["--help"])
         assert result.exit_code == 0
