@@ -110,7 +110,7 @@ class TestTools:
         assert json.loads(text_of(tracked))["tracked"] == "maksimtech/cookieradar"
 
         synced = json.loads(text_of(call(server, "sync_repo", repo="maksimtech/cookieradar")))
-        assert synced == {"repo": "maksimtech/cookieradar", "new_events": []}
+        assert synced == {"repo": "maksimtech/cookieradar", "new_events": [], "warnings": []}
 
         status = json.loads(text_of(call(server, "repo_status", repo="maksimtech/cookieradar")))
         assert status["latest_release"]["tag_name"] == "v2026.44"
@@ -123,7 +123,8 @@ class TestTools:
         assert events == {"events": []}
 
         everything = json.loads(text_of(call(server, "sync_all")))
-        assert everything == {"results": {"maksimtech/cookieradar": []}, "errors": {}, "total_new_events": 0}
+        assert everything == {"results": {"maksimtech/cookieradar": []}, "errors": {}, "warnings": [],
+                              "total_new_events": 0}
 
         gone = json.loads(text_of(call(server, "untrack_repo", repo="maksimtech/cookieradar")))
         assert gone == {"untracked": "maksimtech/cookieradar"}

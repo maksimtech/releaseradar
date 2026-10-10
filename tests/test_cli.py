@@ -231,3 +231,28 @@ def test_a_real_response_object_is_what_the_replay_serves():
     assert isinstance(response, httpx.Response)
     assert response.status_code == 200
     assert response.json()["full_name"] == "maksimtech/codecov-mcp"
+
+
+class TestSyncOutputWhenThingsFail:
+    def test_nothing_new_is_not_said_when_the_only_repo_failed(self, db_path, github):
+        """Seen by the first user: "Nothing new." followed by the error for the one
+        repository there was. Nothing was synced, so nothing is "new" or old."""
+        github.get(f"{API}/repos/maksimtech/does-not-exist-xyz").mock(return_value=replay("gh_missing_repo_404.json"))
+        github.get(f"{API}/repos/maksimtech/does-not-exist-xyz/issues").mock(
+            return_value=replay("gh_missing_repo_issues_404.json"))
+        tracked(db_path, "maksimtech", "does-not-exist-xyz")
+        result = runner.invoke(app, ["sync"])
+        assert result.exit_code == 1
+        assert "Nothing new" not in result.output
+        assert "not found" in result.output
+
+    def test_a_repository_without_pull_requests_syncs_with_a_warning(self, db_path, github):
+        base = f"{API}/repos/torvalds/linux"
+        github.get(base).mock(return_value=replay("gh_linux_repo.json"))
+        route_repo(github, "torvalds", "linux", "gh_linux_issues_all.json", "gh_linux_pulls_404.json",
+                   "gh_linux_releases.json")
+        tracked(db_path, "torvalds", "linux")
+        result = runner.invoke(app, ["sync", "torvalds/linux"])
+        assert result.exit_code == 0, result.output
+        assert "pull requests" in result.output
+        assert "Nothing new" in result.output

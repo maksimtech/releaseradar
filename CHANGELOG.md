@@ -7,7 +7,22 @@ the year is the generation shared by the five Radar and the count is this one's 
 
 ## [Unreleased]
 
+
+## [2026.2] - 2026-10-10
+
+What the first user of 2026.1 found within the hour, with the README's own
+first example.
+
 ### Fixed
+- **`sync` of `torvalds/linux` failed as "not found".** GitHub answers 404 to
+  every `/pulls` query of that repository — pull requests are switched off
+  there — while the repository, its disabled issues and its releases answer
+  200. A 404 on `/pulls` alone is now checked against the repository once: if
+  it is there, the sync goes on without pull requests and says so (CLI warning,
+  `warnings` in the MCP result); if it is gone, that is still the error.
+- `sync` printed "Nothing new." above the error of the only repository it had;
+  that line is now about the repositories that were synced, so with none of
+  them it is not said.
 - The hint printed when `releaseradar mcp` runs without the extra said
   `pip install 'releaseradar'`: rich had taken `[mcp]` for a style tag. Escaped.
 
@@ -74,5 +89,6 @@ traffic before anything shipped; what follows is what that review changed.
   named three of the five Radar and a Claude configuration path that does not
   exist.
 
-[Unreleased]: https://github.com/maksimtech/releaseradar/compare/v2026.1...HEAD
+[Unreleased]: https://github.com/maksimtech/releaseradar/compare/v2026.2...HEAD
+[2026.2]: https://github.com/maksimtech/releaseradar/compare/v2026.1...v2026.2
 [2026.1]: https://github.com/maksimtech/releaseradar/releases/tag/v2026.1
