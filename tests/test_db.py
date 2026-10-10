@@ -25,7 +25,10 @@ class TestRepos:
         assert repo_id > 0
 
     def test_add_repo_idempotent(self, tmp_db):
-        assert tmp_db.add_repo("torvalds", "linux") == tmp_db.add_repo("torvalds", "linux")
+        first = tmp_db.add_repo("torvalds", "linux")
+        second = tmp_db.add_repo("torvalds", "linux")
+        assert second == first
+        assert len(tmp_db.list_repos()) == 1
 
     def test_list_repos_empty(self, tmp_db):
         assert tmp_db.list_repos() == []
