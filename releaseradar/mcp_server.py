@@ -123,16 +123,20 @@ async def list_repos() -> dict:
 async def sync_repo_tool(repo: str) -> dict:
     """Fetch what changed on GitHub since the last sync of one tracked repository and return the new events."""
     owner, name = _split(repo)
-    events = await _in_thread(lambda: sync_repo(owner, name, token=_token(), db_path=_db_path()))
-    return {"repo": f"{owner}/{name}", "new_events": events}
+    warnings: list[str] = []
+    events = await _in_thread(lambda: sync_repo(owner, name, token=_token(), db_path=_db_path(),
+                                                on_warning=warnings.append))
+    return {"repo": f"{owner}/{name}", "new_events": events, "warnings": warnings}
 
 
 @server.tool(name="sync_all")
 async def sync_all_tool() -> dict:
-    """Sync every tracked repository. Returns new events grouped by repo, and the repos GitHub refused."""
-    results, errors = await _in_thread(lambda: sync_all(token=_token(), db_path=_db_path()))
+    """Sync every tracked repository. Returns new events grouped by repo, the repos GitHub refused, and warnings."""
+    warnings: list[str] = []
+    results, errors = await _in_thread(lambda: sync_all(token=_token(), db_path=_db_path(),
+                                                        on_warning=warnings.append))
     total = sum(len(v) for v in results.values())
-    return {"results": results, "errors": errors, "total_new_events": total}
+    return {"results": results, "errors": errors, "warnings": warnings, "total_new_events": total}
 
 
 @server.tool()

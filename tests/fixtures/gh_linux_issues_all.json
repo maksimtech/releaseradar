@@ -1,0 +1,18 @@
+{
+ "_recorded": {
+  "url": "https://api.github.com/repos/torvalds/linux/issues?state=all&sort=updated&direction=desc&per_page=100&page=1",
+  "status": 200,
+  "date": "2026-10-10T12:48:31+00:00",
+  "x-ratelimit-remaining": "4888",
+  "authenticated": true,
+  "note": "Recorded from api.github.com; replayed at the HTTP boundary by the tests. Not hand-edited."
+ },
+ "status": 200,
+ "headers": {
+  "content-type": "application/json; charset=utf-8",
+  "x-ratelimit-limit": "5000",
+  "x-ratelimit-remaining": "4888",
+  "x-ratelimit-reset": "1791637953"
+ },
+ "body": []
+}

@@ -10,6 +10,7 @@ else, and is not an event either.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -33,14 +34,40 @@ def _pr_kind(state: str) -> str:
     return {"open": "pr_opened", "merged": "pr_merged"}.get(state, "pr_closed")
 
 
+Warn = Callable[[str], None]
+
+
+def _pull_requests_or_none(owner: str, name: str, token: str | None, since: str | None,
+                           warn: Warn | None) -> list[dict]:
+    """The pull requests, or an empty list for a repository that has none to list.
+
+    GitHub answers 404 to every `/pulls` query of torvalds/linux — pull requests
+    are switched off there, and the search API finds none — while the repository
+    itself, its (disabled) issues and its releases answer 200. A 404 on this one
+    endpoint is therefore asked about once more: if the repository is there, the
+    feature is not, and the sync goes on without it and says so; if the
+    repository is gone, that is the error.
+    """
+    try:
+        return gh.fetch_pull_requests(owner, name, token, since=since)
+    except gh.GitHubError as exc:
+        if exc.status != 404 or not gh.repo_exists(owner, name, token):
+            raise
+    if warn is not None:
+        warn(f"{owner}/{name}: pull requests are not available on this repository "
+             "(GitHub answers 404 to /pulls); issues and releases were synced.")
+    return []
+
+
 def sync_repo(owner: str, name: str, token: str | None = None,
-              db_path: Path | None = None) -> list[dict]:
+              db_path: Path | None = None, on_warning: Warn | None = None) -> list[dict]:
     """
     Pull what changed on GitHub since the last sync of one tracked repo, persist
     it, and return the events that change produced.
 
-    Raises `NotTracked` for a repository that was never `track`ed and
-    `gh.GitHubError` for anything GitHub refused to answer.
+    `on_warning` receives what was synced less than fully and why. Raises
+    `NotTracked` for a repository that was never `track`ed and `gh.GitHubError`
+    for anything GitHub refused to answer.
     """
     database = _db.open_db(db_path or _db._DEFAULT_DB)
     repo = database.get_repo(owner, name)
@@ -52,7 +79,7 @@ def sync_repo(owner: str, name: str, token: str | None = None,
     started = _now()
 
     issues = gh.fetch_issues(owner, name, token, since=since)
-    pulls = gh.fetch_pull_requests(owner, name, token, since=since)
+    pulls = _pull_requests_or_none(owner, name, token, since, on_warning)
     releases = gh.fetch_releases(owner, name, token)
 
     new_events: list[dict] = []
@@ -110,7 +137,7 @@ def sync_repo(owner: str, name: str, token: str | None = None,
     return new_events
 
 
-def sync_all(token: str | None = None, db_path: Path | None = None
+def sync_all(token: str | None = None, db_path: Path | None = None, on_warning: Warn | None = None
              ) -> tuple[dict[str, list[dict]], dict[str, str]]:
     """Sync every tracked repo. Returns ({owner/name: [events]}, {owner/name: error}).
 
@@ -123,7 +150,7 @@ def sync_all(token: str | None = None, db_path: Path | None = None
     for row in database.list_repos():
         key = f"{row['owner']}/{row['name']}"
         try:
-            results[key] = sync_repo(row["owner"], row["name"], token=token, db_path=db_path)
+            results[key] = sync_repo(row["owner"], row["name"], token=token, db_path=db_path, on_warning=on_warning)
         except gh.GitHubError as exc:
             errors[key] = str(exc)
     return results, errors

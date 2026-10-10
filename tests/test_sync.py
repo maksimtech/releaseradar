@@ -203,3 +203,46 @@ class TestSyncAll:
         assert results == {"maksimtech/codecov-mcp": []}
         assert list(errors) == ["maksimtech/does-not-exist-xyz"]
         assert "not found" in errors["maksimtech/does-not-exist-xyz"]
+
+
+class TestRepositoriesWithoutPullRequests:
+    """torvalds/linux, the README's own first example: GitHub serves the repository,
+    an empty issue list (`has_issues: false`) and an empty release list, and
+    answers 404 to every `/pulls` query — pull requests are switched off there
+    entirely (the search API finds none). Recorded on 2026-10-10, after the
+    first user of 2026.1 hit it: `track` succeeded and `sync` reported the
+    repository as not found."""
+
+    def route_linux(self, github):
+        base = f"{API}/repos/torvalds/linux"
+        github.get(base).mock(return_value=replay("gh_linux_repo.json"))
+        return route_repo(github, "torvalds", "linux",
+                          "gh_linux_issues_all.json", "gh_linux_pulls_404.json", "gh_linux_releases.json")
+
+    def test_a_404_on_pulls_alone_is_not_a_missing_repository(self, db_path, github):
+        self.route_linux(github)
+        database = track(db_path, "torvalds", "linux")
+        warnings: list[str] = []
+
+        events = sync_repo("torvalds", "linux", db_path=db_path, on_warning=warnings.append)
+
+        assert events == []
+        assert database.repo_summary("torvalds", "linux")["last_synced_at"] is not None
+        assert warnings and "pull requests" in warnings[0] and "torvalds/linux" in warnings[0]
+
+    def test_the_repository_is_asked_about_once_and_only_on_the_404(self, db_path, github):
+        routes = self.route_linux(github)
+        track(db_path, "torvalds", "linux")
+        sync_repo("torvalds", "linux", db_path=db_path)
+        repo_calls = [c for c in github.calls if c.request.url.path == "/repos/torvalds/linux"]
+        assert len(repo_calls) == 1
+        assert routes["issues"].called and routes["releases"].called
+
+    def test_a_repository_that_is_really_gone_is_still_not_found(self, db_path, github):
+        """The same 404 on /pulls with the repository itself answering 404: gone."""
+        github.get(f"{API}/repos/maksimtech/does-not-exist-xyz").mock(return_value=replay("gh_missing_repo_404.json"))
+        github.get(f"{API}/repos/maksimtech/does-not-exist-xyz/issues").mock(
+            return_value=replay("gh_missing_repo_issues_404.json"))
+        track(db_path, "maksimtech", "does-not-exist-xyz")
+        with pytest.raises(gh.GitHubError, match="not found"):
+            sync_repo("maksimtech", "does-not-exist-xyz", db_path=db_path)

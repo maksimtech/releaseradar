@@ -159,13 +159,15 @@ def sync(
     ] = None,
 ) -> None:
     """Fetch what changed on GitHub since the last sync and record the events."""
+    warnings: list[str] = []
     if repo:
         owner, name = _split(repo)
         try:
             with console.status(f"Syncing {owner}/{name}…"):
-                events = sync_repo(owner, name, token=_token(), db_path=_db_path())
+                events = sync_repo(owner, name, token=_token(), db_path=_db_path(), on_warning=warnings.append)
         except (NotTracked, gh.GitHubError) as exc:
             _fail(str(exc))
+        _print_warnings(warnings)
         _print_events({f"{owner}/{name}": events})
         return
 
@@ -174,12 +176,21 @@ def sync(
         rprint("[dim]Nothing to sync. Add a repo with [bold]releaseradar track[/bold].[/dim]")
         return
     with console.status("Syncing all tracked repos…"):
-        results, errors = sync_all(token=_token(), db_path=_db_path())
-    _print_events(results)
+        results, errors = sync_all(token=_token(), db_path=_db_path(), on_warning=warnings.append)
+    _print_warnings(warnings)
     for key, message in errors.items():
         rprint(f"[red]✗ {key}:[/red] {message}")
+    # "Nothing new" is about the repositories that were synced; with none of them
+    # it would be said about the failures.
+    if results:
+        _print_events(results)
     if errors:
         raise typer.Exit(1)
+
+
+def _print_warnings(warnings: list[str]) -> None:
+    for message in warnings:
+        rprint(f"[yellow]![/yellow] {message}")
 
 
 def _print_events(results: dict[str, list[dict]]) -> None:
