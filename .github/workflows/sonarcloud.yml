@@ -1,0 +1,50 @@
+name: SonarCloud Analysis
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    types: [opened, synchronize, reopened]
+permissions:
+  contents: read
+jobs:
+  sonarcloud:
+    name: SonarCloud
+    runs-on: ubuntu-26.04
+    # GitHub passes no Actions secrets to Dependabot or fork PRs: there the
+    # token is empty and the scan fails with "Not authorized". A step's `if:`
+    # cannot read `secrets`, so the job publishes only whether it exists; the
+    # token itself stays with the scanner. Those runs still test and build
+    # coverage.
+    env:
+      SONAR_ENABLED: ${{ secrets.SONAR_TOKEN != '' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          pip install -e ".[dev]"  # NOSONAR
+      - name: Run tests with coverage
+        run: |
+          pytest tests/ --cov=releaseradar --cov-report=xml --cov-report=term-missing
+      # `qualitygate.wait` is what makes this job mean something. Without it the
+      # step uploads the analysis and succeeds, and SonarCloud decides the gate
+      # afterwards — so the workflow can be green while the gate is ERROR, and
+      # the only way to find out is to open sonarcloud.io by hand. With it, a red
+      # gate is a red job.
+      - name: SonarQube Scan
+        if: ${{ env.SONAR_ENABLED == 'true' }}
+        uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9 # v8.3.0
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >
+            -Dsonar.qualitygate.wait=true
+
+      - name: Report skipped scan
+        if: ${{ env.SONAR_ENABLED != 'true' }}
+        run: echo "::notice title=SonarCloud skipped::SONAR_TOKEN is not available to this run (Dependabot or fork PR). Tests and coverage ran; the scan runs after merge to main."

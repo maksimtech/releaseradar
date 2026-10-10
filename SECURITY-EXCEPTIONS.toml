@@ -1,0 +1,22 @@
+# Findings that are open, known, and accepted for now — each with a reason and a
+# date. `.github/workflows/security-posture.yml` reads this file: an open high or
+# critical alert with no entry here fails the build, an entry past its
+# `review_by` fails the build, and an entry that no longer matches anything fails
+# the build too, so the record cannot drift away from the product.
+#
+# The rule this file exists to serve: block on everything we can fix, never block
+# on an upstream flaw with no fix available — but write down why, and when that
+# will be looked at again.
+#
+# Fields: id, where, why, review_by are required. `source` narrows an entry to one
+# scanner; `path` narrows it to one file, which matters for a rule that can fire
+# anywhere — an entry for a CodeQL rule without a path would excuse the next real
+# occurrence of it somewhere else.
+#
+# Started empty on 2026-10-10, when releaseradar joined the suite. The image is
+# python:3.12-slim-trixie with nothing added by apt, so what the scanners will
+# report is the base image's Debian packages (zlib, perl-base, libstdc++6 — the
+# same findings the other five Radar record) and the Python closure, which here
+# includes the `mcp` SDK: pydantic, starlette, uvicorn, jsonschema. Each
+# position is to be read out of the Debian security tracker with `patchradar
+# debian <CVE>` before it is written down, not inferred from a scanner's line.

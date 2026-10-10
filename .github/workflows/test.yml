@@ -12,10 +12,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12", "3.13"]
+        # The stable rows are the Pythons pyproject.toml promises; the `-dev`
+        # row is the next minor, allowed to fail. tests/test_ci_contract.py
+        # keeps the two lists equal and says what to promote when 3.15 is final.
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
         experimental: [false]
         include:
-          - python-version: "3.14-dev"
+          - python-version: "3.15-dev"
             experimental: true
     continue-on-error: ${{ matrix.experimental }}
     steps:
@@ -25,25 +28,40 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install dependencies
-        run: pip install -e ".[dev]"  # NOSONAR - trusted internal project
+        # The dev extra, or pytest is not here to run the suite with.
+        run: pip install -e ".[dev]"  # NOSONAR - trusted internal project, no external setup scripts
 
       - name: Run test suite
+        # No network: GitHub is replayed from tests/fixtures, and the MCP server
+        # is driven over stdio as a subprocess of this interpreter.
         run: >-
           pytest tests/ -v
           --cov=releaseradar --cov-report=xml --cov-report=term-missing
 
       - name: Test CLI
+        # --help costs nothing, needs no network, and catches an import error or
+        # a broken entry point — which the suite, importing modules directly,
+        # does not.
         run: releaseradar --help
 
       - name: Upload coverage to Codecov
+        # Once, not once per matrix entry: the same report five times is five
+        # uploads of one measurement.
         if: matrix.python-version == '3.12'
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: coverage.xml
+          # A failed upload loses a metric, it does not invalidate the tests that
+          # just passed.
           fail_ci_if_error: false
 
   summary:
+    # The branch ruleset requires a check named exactly "Tests". The matrix job
+    # cannot provide it: its contexts carry the Python version, so they change
+    # whenever the matrix does. This job gives the ruleset one stable name.
+    # always(): a skipped required check counts as passed, so this has to run
+    # even when the matrix fails, and fail explicitly in that case.
     name: Tests
     needs: [test]
     if: always()
