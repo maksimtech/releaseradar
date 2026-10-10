@@ -116,6 +116,7 @@ class TestSync:
         assert _db.open_db(db_path).list_repos() == []
 
     def test_first_sync_of_a_repo_is_quiet(self, db_path, github):
+        github.get(f"{API}/repos/maksimtech/cookieradar").mock(return_value=replay("gh_codecov-mcp_repo.json"))
         route_repo(github, "maksimtech", "cookieradar",
                    "gh_codecov-mcp_issues_all.json", "gh_codecov-mcp_pulls_all.json", "gh_cookieradar_releases.json")
         tracked(db_path, "maksimtech", "cookieradar")
@@ -126,6 +127,7 @@ class TestSync:
         assert "v2026.44" in status.output
 
     def test_a_missing_repository_is_an_error_line_not_a_traceback(self, db_path, github):
+        github.get(f"{API}/repos/maksimtech/does-not-exist-xyz").mock(return_value=replay("gh_missing_repo_404.json"))
         github.get(f"{API}/repos/maksimtech/does-not-exist-xyz/issues").mock(
             return_value=replay("gh_missing_repo_issues_404.json"))
         tracked(db_path, "maksimtech", "does-not-exist-xyz")
@@ -135,6 +137,9 @@ class TestSync:
         assert "Traceback" not in result.output and "HTTPStatusError" not in result.output
 
     def test_a_rate_limit_is_explained(self, db_path, github):
+        """The quota is gone: the repository record answers 403 too, the size of the
+        open set stays unknown, and the first walk reports the limit."""
+        github.get(f"{API}/repos/psf/requests").mock(return_value=RATE_LIMITED)
         github.get(f"{API}/repos/psf/requests/issues").mock(return_value=RATE_LIMITED)
         tracked(db_path, "psf", "requests")
         result = runner.invoke(app, ["sync", "psf/requests"])
@@ -143,6 +148,8 @@ class TestSync:
         assert "GITHUB_TOKEN" in result.output
 
     def test_sync_all_reports_each_failure_and_keeps_going(self, db_path, github):
+        github.get(f"{API}/repos/maksimtech/codecov-mcp").mock(return_value=replay("gh_codecov-mcp_repo.json"))
+        github.get(f"{API}/repos/maksimtech/does-not-exist-xyz").mock(return_value=replay("gh_missing_repo_404.json"))
         route_repo(github, "maksimtech", "codecov-mcp",
                    "gh_codecov-mcp_issues_all.json", "gh_codecov-mcp_pulls_all.json", "gh_codecov-mcp_releases.json")
         github.get(f"{API}/repos/maksimtech/does-not-exist-xyz/issues").mock(

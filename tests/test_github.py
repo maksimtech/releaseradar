@@ -231,3 +231,28 @@ class TestPagination:
         gh.fetch_pull_requests("psf", "requests", state="open")
         assert issues.calls.last.request.url.params["state"] == "open"
         assert pulls.calls.last.request.url.params["state"] == "open"
+
+
+class TestProgress:
+    def test_on_page_is_told_after_every_page_how_far_the_walk_got(self, github):
+        """Two pages of python/cpython issues (the recorded first page carries the
+        Link to the second): the callback hears (items so far, pages so far)
+        twice, and the items are the issues only, pull requests already dropped."""
+        first = replay("gh_cpython_issues_page1_of2.json", last_page=False)
+        issues_on_first_page = len([i for i in first.json() if "pull_request" not in i])
+        github.get(f"{API}/repos/python/cpython/issues").mock(return_value=first)
+        github.get(first.links["next"]["url"]).mock(
+            return_value=httpx.Response(200, json=[{"number": 1, "updated_at": "x"}]))
+        heard: list[tuple[int, int]] = []
+
+        gh.fetch_issues("python", "cpython", on_page=lambda n, p: heard.append((n, p)))
+
+        assert heard == [(issues_on_first_page, 1), (issues_on_first_page + 1, 2)]
+
+    def test_open_items_reads_the_repository_record(self, github):
+        github.get(f"{API}/repos/torvalds/linux").mock(return_value=replay("gh_linux_repo.json"))
+        assert gh.open_items("torvalds", "linux") == recorded("gh_linux_repo.json")["body"]["open_issues_count"]
+
+    def test_open_items_is_none_when_github_will_not_say(self, github):
+        github.get(f"{API}/repos/maksimtech/does-not-exist-xyz").mock(return_value=replay("gh_missing_repo_404.json"))
+        assert gh.open_items("maksimtech", "does-not-exist-xyz") is None

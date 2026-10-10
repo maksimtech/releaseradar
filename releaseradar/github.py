@@ -87,8 +87,13 @@ def _get(client: httpx.Client, url: str, subject: str, params: dict | None = Non
     return resp
 
 
+# Called after every page with (items fetched so far, pages fetched so far).
+OnPage = Callable[[int, int], None]
+
+
 def _paginate(client: httpx.Client, url: str, subject: str, params: dict | None = None,
-              stop_when: Callable[[dict], bool] | None = None) -> list[dict]:
+              stop_when: Callable[[dict], bool] | None = None,
+              on_page: OnPage | None = None, keep: Callable[[dict], bool] | None = None) -> list[dict]:
     """Every page of a list endpoint, in GitHub's ordering.
 
     The next page is the one GitHub names in the `Link` header, not a `page`
@@ -99,20 +104,29 @@ def _paginate(client: httpx.Client, url: str, subject: str, params: dict | None 
 
     `stop_when(item)` ends the walk at the first item it accepts (that item and
     the rest of its page are dropped): with `sort=updated&direction=desc` it is
-    how a sync stops at the first thing it has already seen.
+    how a sync stops at the first thing it has already seen. `keep(item)`
+    filters each page before it is counted or returned. `on_page` is told how
+    far the walk has got after every page, which is what a spinner that stays
+    silent for two minutes is missing.
     """
     results: list[dict] = []
+    pages = 0
     resp = _get(client, url, subject, params={**(params or {}), "per_page": _PAGE})
     while True:
         batch = resp.json()
         if not batch:
             break
+        pages += 1
         if stop_when is not None:
             for index, item in enumerate(batch):
                 if stop_when(item):
-                    results.extend(batch[:index])
+                    results.extend(i for i in batch[:index] if keep is None or keep(i))
+                    if on_page is not None:
+                        on_page(len(results), pages)
                     return results
-        results.extend(batch)
+        results.extend(i for i in batch if keep is None or keep(i))
+        if on_page is not None:
+            on_page(len(results), pages)
         next_page = resp.links.get("next", {}).get("url")
         if not next_page:
             break
@@ -129,7 +143,8 @@ def _updated_before(since: str | None) -> Callable[[dict], bool] | None:
 # ── public API ───────────────────────────────────────────────────────────────
 
 def fetch_issues(owner: str, repo: str, token: str | None = None,
-                 since: str | None = None, state: str = "all") -> list[dict[str, Any]]:
+                 since: str | None = None, state: str = "all",
+                 on_page: OnPage | None = None) -> list[dict[str, Any]]:
     """Issues (not PRs), most recently updated first.
 
     `since` is an ISO-8601 instant: only issues updated at or after it come back,
@@ -141,13 +156,14 @@ def fetch_issues(owner: str, repo: str, token: str | None = None,
     if since:
         params["since"] = since
     with _client(token) as c:
-        raw = _paginate(c, f"{_BASE}/repos/{owner}/{repo}/issues", f"{owner}/{repo}", params)
-    # GitHub /issues returns PRs too; filter them out
-    return [i for i in raw if "pull_request" not in i]
+        # GitHub /issues returns PRs too; they are not counted and not returned.
+        return _paginate(c, f"{_BASE}/repos/{owner}/{repo}/issues", f"{owner}/{repo}", params,
+                         on_page=on_page, keep=lambda i: "pull_request" not in i)
 
 
 def fetch_pull_requests(owner: str, repo: str, token: str | None = None,
-                        since: str | None = None, state: str = "all") -> list[dict[str, Any]]:
+                        since: str | None = None, state: str = "all",
+                        on_page: OnPage | None = None) -> list[dict[str, Any]]:
     """Pull requests, most recently updated first.
 
     `/pulls` has no `since` parameter (GitHub ignores it), so the walk is cut at
@@ -156,12 +172,28 @@ def fetch_pull_requests(owner: str, repo: str, token: str | None = None,
     params: dict = {"state": state, "sort": "updated", "direction": "desc"}
     with _client(token) as c:
         return _paginate(c, f"{_BASE}/repos/{owner}/{repo}/pulls", f"{owner}/{repo}", params,
-                         stop_when=_updated_before(since))
+                         stop_when=_updated_before(since), on_page=on_page)
 
 
-def fetch_releases(owner: str, repo: str, token: str | None = None) -> list[dict[str, Any]]:
+def fetch_releases(owner: str, repo: str, token: str | None = None,
+                   on_page: OnPage | None = None) -> list[dict[str, Any]]:
     with _client(token) as c:
-        return _paginate(c, f"{_BASE}/repos/{owner}/{repo}/releases", f"{owner}/{repo}")
+        return _paginate(c, f"{_BASE}/repos/{owner}/{repo}/releases", f"{owner}/{repo}", on_page=on_page)
+
+
+def open_items(owner: str, repo: str, token: str | None = None) -> int | None:
+    """How many issues and pull requests are open, from the repository record —
+    the size of a first sync, known before it starts. None for a repository
+    GitHub will not describe (the sync itself will say why)."""
+    with _client(token) as c:
+        try:
+            resp = c.get(f"{_BASE}/repos/{owner}/{repo}")
+        except httpx.HTTPError:
+            return None
+    if resp.status_code != 200:
+        return None
+    count = resp.json().get("open_issues_count")
+    return int(count) if isinstance(count, int) else None
 
 
 def repo_exists(owner: str, repo: str, token: str | None = None) -> bool:

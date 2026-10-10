@@ -8,6 +8,24 @@ the year is the generation shared by the five Radar and the count is this one's 
 ## [Unreleased]
 
 
+## [2026.4] - 2026-10-10
+
+The first sync of `python/cpython` took two minutes behind a spinner that said
+"Syncing all tracked repos…" and nothing else.
+
+### Changed
+- **`sync` says how far it is**: `python/cpython: 3,700 of ~9,642 open issues
+  and pull requests, 0 releases — 37 requests so far…`, updated after every
+  page. The total comes from the repository record, one extra request paid
+  only by a first sync with somebody watching; later syncs count without it.
+- **Issues, pull requests and releases are fetched side by side.** Each is a
+  chain of round trips to GitHub; in sequence they were three chains. Measured
+  on the first sync of `python/cpython`, 124 requests either way: 121 s before,
+  80 s after (the issues walk alone is the long pole); the second sync, 1 s.
+- The MCP `sync_repo` and `sync_all` results are unchanged; progress is a CLI
+  affair.
+
+
 ## [2026.3] - 2026-10-10
 
 Found by the same first user, minutes later, with `python/cpython`.
@@ -109,7 +127,8 @@ traffic before anything shipped; what follows is what that review changed.
   named three of the five Radar and a Claude configuration path that does not
   exist.
 
-[Unreleased]: https://github.com/maksimtech/releaseradar/compare/v2026.3...HEAD
+[Unreleased]: https://github.com/maksimtech/releaseradar/compare/v2026.4...HEAD
+[2026.4]: https://github.com/maksimtech/releaseradar/compare/v2026.3...v2026.4
 [2026.3]: https://github.com/maksimtech/releaseradar/compare/v2026.2...v2026.3
 [2026.2]: https://github.com/maksimtech/releaseradar/compare/v2026.1...v2026.2
 [2026.1]: https://github.com/maksimtech/releaseradar/releases/tag/v2026.1
