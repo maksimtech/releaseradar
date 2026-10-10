@@ -278,12 +278,10 @@ class _DB:
     def mark_notified(self, event_ids: list[int]) -> None:
         if not event_ids:
             return
-        placeholders = ",".join("?" * len(event_ids))
+        # One statement per id rather than an `IN (...)` built from the list:
+        # the same work for SQLite, and no SQL assembled from a string.
         with self._cursor() as conn:
-            conn.execute(
-                f"UPDATE events SET notified=1 WHERE id IN ({placeholders})",  # noqa: S608 - placeholders only
-                event_ids,
-            )
+            conn.executemany("UPDATE events SET notified=1 WHERE id=?", [(int(i),) for i in event_ids])
 
     # ── read helpers for status display ──────────────────────────────────────
 

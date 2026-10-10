@@ -30,6 +30,14 @@ traffic before anything shipped; what follows is what that review changed.
   CodeQL, Snyk, Trivy, Bandit, licences, mutation, SonarCloud, Docker build check
   and Scout, and the Security Posture gate over `SECURITY-EXCEPTIONS.toml`.
 
+### Security
+- `SECURITY-EXCEPTIONS.toml` records the three findings Snyk Container raised on
+  the first scan, all in the `python:3.12-slim-trixie` base image and none in
+  anything this image adds: zlib CVE-2026-85091 (open everywhere, Debian bug
+  1146895), attr CVE-2026-54371 and acl CVE-2026-54369 (fixed in sid, scheduled
+  for a trixie point release). Positions read with `patchradar debian` on
+  2026-10-10, review dates attached.
+
 ### Fixed (against the unreleased scaffold)
 - **The MCP server did not start.** `mcp>=1.0` installs the 2.x SDK, where the
   low-level `Server` lost its decorators and `FastMCP` became `MCPServer`; the

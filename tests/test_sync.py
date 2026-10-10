@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import httpx
@@ -18,6 +19,16 @@ def track(db_path: Path, owner: str, name: str) -> _db._DB:
     database = _db.open_db(db_path)
     database.add_repo(owner, name)
     return database
+
+
+def after_the_last_sync() -> str:
+    """A GitHub timestamp later than any `last_synced_at` this test run can write.
+
+    A derived transition has to carry an `updated_at` after the previous sync,
+    or the pull-request walk cuts it as already seen — which is correct, and is
+    how a fixed "12:00:00Z" turned a test red the moment the clock passed noon.
+    """
+    return (datetime.now(UTC) + timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def an_hour_later(items: list[dict]) -> list[dict]:
@@ -96,8 +107,9 @@ class TestLaterSyncs:
         database = track(db_path, "psf", "requests")
         sync_repo("psf", "requests", db_path=db_path)
 
-        closed = [{**i, "state": "closed", "closed_at": "2026-10-10T12:00:00Z",
-                   "updated_at": "2026-10-10T12:00:00Z"} if i["number"] == 7630 else i for i in first]
+        when = after_the_last_sync()
+        closed = [{**i, "state": "closed", "closed_at": when, "updated_at": when}
+                  if i["number"] == 7630 else i for i in first]
         issues.mock(return_value=httpx.Response(200, json=closed))
         events = sync_repo("psf", "requests", db_path=db_path)
 
@@ -116,8 +128,8 @@ class TestLaterSyncs:
         track(db_path, "psf", "requests")
         sync_repo("psf", "requests", db_path=db_path)
 
-        merged = {**prs[0], "state": "closed", "merged_at": "2026-10-10T12:00:00Z",
-                  "updated_at": "2026-10-10T12:00:00Z"}
+        when = after_the_last_sync()
+        merged = {**prs[0], "state": "closed", "merged_at": when, "updated_at": when}
         pulls.mock(return_value=httpx.Response(200, json=[merged, *prs[1:]]))
         events = sync_repo("psf", "requests", db_path=db_path)
 

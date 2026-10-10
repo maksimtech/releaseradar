@@ -20,3 +20,61 @@
 # includes the `mcp` SDK: pydantic, starlette, uvicorn, jsonschema. Each
 # position is to be read out of the Debian security tracker with `patchradar
 # debian <CVE>` before it is written down, not inferred from a scanner's line.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# The scanners spoke on 2026-10-10, two hours after the repository was created:
+# Snyk Container, three high findings, all in Debian 13 packages of the
+# python:3.12-slim-trixie base image and none in anything this image adds — it
+# adds nothing with apt. The same three the other five Radar carry, read again
+# today with `patchradar debian` rather than copied:
+#
+#   zlib       open in bookworm, trixie, sid and forky alike, nothing scheduled,
+#              Debian bug 1146895. Waiting is not a plan; evidence goes there.
+#   attr, acl  already fixed in unstable and forky (1:2.6.0-1, 2.4.0-1), filed
+#              no-dsa for trixie *because the fix comes in a point release*.
+#              That waiting ends at a dated event: rebuild after it, which the
+#              weekly rebuild of `latest` does on its own.
+# ─────────────────────────────────────────────────────────────────────────────
+
+[[exception]]
+id = "SNYK-DEBIAN13-ZLIB-19520500"
+source = "Snyk Container"
+where = "zlib 1:1.3.dfsg+really1.3.1-1, python slim-trixie base image"
+why = """
+CVE-2026-85091, an out-of-bounds write reached through gzprintf. `patchradar \
+debian` on 2026-10-10: open in trixie at 1:1.3.dfsg+really1.3.1-1, no fixed \
+version in any suite, urgency not yet assigned, Debian bug 1146895. releaseradar \
+reaches zlib only through Python's own module, for the gzip-encoded responses \
+httpx decompresses from api.github.com — one well-known peer, not arbitrary \
+input. Nothing to ask for and nothing to wait for; what moves it is evidence on \
+that bug.
+"""
+review_by = "2026-12-31"
+
+[[exception]]
+id = "SNYK-DEBIAN13-ATTR-17678182"
+source = "Snyk Container"
+where = "attr 1:2.5.2-3, python slim-trixie base image"
+why = """
+CVE-2026-54371, and not "no fix available" as the one-line report implies: \
+Debian has fixed it in unstable and forky (attr 1:2.6.0-1) and filed it no-dsa \
+for trixie with the note "Will be fixed first in unstable, then point release \
+update; not to be backported by individual patches" — read with `patchradar \
+debian` on 2026-10-10. The fix is scheduled, not absent: the weekly rebuild \
+picks it up after the point release. A symlink traversal in recursive \
+getfattr/setfattr, which this image never runs.
+"""
+review_by = "2026-11-30"
+
+[[exception]]
+id = "SNYK-DEBIAN13-ACL-17677866"
+source = "Snyk Container"
+where = "acl 2.3.2-2, python slim-trixie base image"
+why = """
+CVE-2026-54369, in the same position as attr above on 2026-10-10: fixed in \
+unstable and forky (acl 2.4.0-1), no-dsa for trixie with the fix scheduled for \
+a point release — Debian's note says why it cannot be backported piecemeal, the \
+fix adds the `acl_*_at()` ABI of 2.4.0. A local TOCTOU in recursive \
+setfacl/chacl; this image calls neither.
+"""
+review_by = "2026-11-30"
