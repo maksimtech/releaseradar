@@ -311,18 +311,15 @@ def notify(
 def web(
     every: Annotated[float, typer.Option("--every", min=1, help="Minutes between syncs")] = 15,
     port: Annotated[int, typer.Option("--port", min=1, max=65535, help="Port on 127.0.0.1")] = 8765,
-    host: Annotated[str, typer.Option("--host", help="Address to bind; keep it local, there is no login")]
-    = "127.0.0.1",
     no_browser: Annotated[bool, typer.Option("--no-browser", help="Do not open the page in the browser")] = False,
 ) -> None:
-    """Open a local dashboard that syncs every few minutes and shows what changed."""
+    """Open a local dashboard (127.0.0.1 only) that syncs every few minutes and shows what changed."""
     from .web import serve
 
     if not _db.open_db(_db_path()).list_repos():
         rprint("[dim]Nothing tracked yet. Add a repo with [bold]releaseradar track owner/repo[/bold]; "
                "the page will pick it up at the next sync.[/dim]")
-    serve(db_path=_db_path(), token=_token(), every_minutes=every, host=host, port=port,
-          open_browser=not no_browser)
+    serve(db_path=_db_path(), token=_token(), every_minutes=every, port=port, open_browser=not no_browser)
 
 
 # ── mcp ───────────────────────────────────────────────────────────────────────

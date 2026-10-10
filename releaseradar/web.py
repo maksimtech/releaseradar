@@ -295,17 +295,25 @@ class DashboardServer(ThreadingHTTPServer):
         return urlunsplit(("http", f"{self.host}:{self.server_port}", "/", "", ""))
 
 
-def serve(db_path: Path, token: str | None, every_minutes: float, host: str = "127.0.0.1",
+LOOPBACK = "127.0.0.1"
+
+
+def serve(db_path: Path, token: str | None, every_minutes: float,
           port: int = 8765, open_browser: bool = True) -> None:
-    """Start the poller and the page, open the browser, and block until Ctrl-C."""
+    """Start the poller and the page, open the browser, and block until Ctrl-C.
+
+    Loopback only, and not an option: the page has no login and the token it
+    syncs with is the caller's. Plain HTTP is right for that address and wrong
+    for any other, which is why there is no `--host`.
+    """
     poller = Poller(interval=every_minutes * 60, token=token, db_path=db_path)
-    server = DashboardServer(host, port, db_path, poller)
+    server = DashboardServer(LOOPBACK, port, db_path, poller)
     poller.start()
     print(f"ReleaseRadar dashboard on {server.url} — syncing every {every_minutes:g} min; Ctrl-C to stop.")
     if open_browser:
         webbrowser.open(server.url)
     try:
-        server.serve_forever()
+        server.serve_forever()  # NOSONAR - clear-text HTTP on the loopback interface only, by design (see above)
     except KeyboardInterrupt:
         pass
     finally:

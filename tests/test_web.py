@@ -51,6 +51,16 @@ class TestPage:
         assert server.server_address[0] == "127.0.0.1"
         assert server.url.startswith("http://127.0.0.1:") and server.server_port != 0
 
+    def test_the_command_offers_no_host_option(self):
+        """No `--host`: the page has no login, so the only address it may serve on
+        is the loopback one, and that is not a choice offered to the caller."""
+        import inspect
+
+        from releaseradar.web import LOOPBACK, serve
+
+        assert LOOPBACK == "127.0.0.1"
+        assert "host" not in inspect.signature(serve).parameters
+
     def test_responses_are_not_cached(self, server):
         assert httpx.get(server.url + "api/state").headers["cache-control"] == "no-store"
 
