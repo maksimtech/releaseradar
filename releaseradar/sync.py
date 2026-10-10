@@ -38,7 +38,7 @@ Warn = Callable[[str], None]
 
 
 def _pull_requests_or_none(owner: str, name: str, token: str | None, since: str | None,
-                           warn: Warn | None) -> list[dict]:
+                           warn: Warn | None, state: str = "all") -> list[dict]:
     """The pull requests, or an empty list for a repository that has none to list.
 
     GitHub answers 404 to every `/pulls` query of torvalds/linux — pull requests
@@ -49,7 +49,7 @@ def _pull_requests_or_none(owner: str, name: str, token: str | None, since: str 
     repository is gone, that is the error.
     """
     try:
-        return gh.fetch_pull_requests(owner, name, token, since=since)
+        return gh.fetch_pull_requests(owner, name, token, since=since, state=state)
     except gh.GitHubError as exc:
         if exc.status != 404 or not gh.repo_exists(owner, name, token):
             raise
@@ -78,8 +78,14 @@ def sync_repo(owner: str, name: str, token: str | None = None,
     seeding = since is None
     started = _now()
 
-    issues = gh.fetch_issues(owner, name, token, since=since)
-    pulls = _pull_requests_or_none(owner, name, token, since, on_warning)
+    # The first sync records what is open now, and nothing that was closed before
+    # anyone watched: those are not transitions this tracker can ever report, and
+    # for python/cpython they are 146 000 items against 9 700 open ones. Every
+    # later sync asks for everything updated since the last one, closed included,
+    # which is where the transitions are.
+    state = "open" if seeding else "all"
+    issues = gh.fetch_issues(owner, name, token, since=since, state=state)
+    pulls = _pull_requests_or_none(owner, name, token, since, on_warning, state=state)
     releases = gh.fetch_releases(owner, name, token)
 
     new_events: list[dict] = []

@@ -8,6 +8,26 @@ the year is the generation shared by the five Radar and the count is this one's 
 ## [Unreleased]
 
 
+## [2026.3] - 2026-10-10
+
+Found by the same first user, minutes later, with `python/cpython`.
+
+### Fixed
+- **`sync` of a large repository failed with GitHub's 422** "Pagination with
+  the page parameter is not supported for large datasets, please use cursor
+  based pagination". The walk counted `page=1, 2, 3…`; GitHub refuses that
+  from page 100 and names the next page, cursor included, in the `Link` header
+  from page 1 on. The walk now follows `Link: rel="next"` and stops when no
+  next page is offered.
+
+### Changed
+- The first sync of a repository asks for what is **open** now, not for its
+  whole history: what was closed before anyone watched is not a transition this
+  tracker can ever report. For `python/cpython` that is about 100 requests
+  instead of 1 560; later syncs ask for everything updated since the last one,
+  closed included.
+
+
 ## [2026.2] - 2026-10-10
 
 What the first user of 2026.1 found within the hour, with the README's own
@@ -89,6 +109,7 @@ traffic before anything shipped; what follows is what that review changed.
   named three of the five Radar and a Claude configuration path that does not
   exist.
 
-[Unreleased]: https://github.com/maksimtech/releaseradar/compare/v2026.2...HEAD
+[Unreleased]: https://github.com/maksimtech/releaseradar/compare/v2026.3...HEAD
+[2026.3]: https://github.com/maksimtech/releaseradar/compare/v2026.2...v2026.3
 [2026.2]: https://github.com/maksimtech/releaseradar/compare/v2026.1...v2026.2
 [2026.1]: https://github.com/maksimtech/releaseradar/releases/tag/v2026.1

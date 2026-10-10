@@ -26,10 +26,15 @@ def recorded(name: str) -> dict:
     return doc
 
 
-def replay(name: str) -> httpx.Response:
-    """The recorded response, status, rate-limit headers and body as GitHub sent them."""
+def replay(name: str, last_page: bool = True) -> httpx.Response:
+    """The recorded response, status, rate-limit headers and body as GitHub sent them.
+
+    A recording made with a small `per_page` carries GitHub's `Link: rel="next"`
+    to the rest of the dataset, which the client follows. Most tests mean "this
+    page is all there is", so the link is dropped unless `last_page=False`."""
     doc = recorded(name)
-    headers = {k: v for k, v in doc["headers"].items() if k != "content-type"}
+    dropped = {"content-type"} | (set() if not last_page else {"link"})
+    headers = {k: v for k, v in doc["headers"].items() if k not in dropped}
     return httpx.Response(doc["status"], json=doc["body"], headers=headers)
 
 

@@ -1,0 +1,22 @@
+{
+ "_recorded": {
+  "url": "https://api.github.com/repos/python/cpython/issues?state=all&sort=updated&direction=desc&per_page=100&page=100",
+  "status": 422,
+  "date": "2026-10-10T13:06:48+00:00",
+  "x-ratelimit-remaining": "4831",
+  "authenticated": true,
+  "note": "Recorded from api.github.com; replayed at the HTTP boundary by the tests. Not hand-edited."
+ },
+ "status": 422,
+ "headers": {
+  "content-type": "application/json; charset=utf-8",
+  "x-ratelimit-limit": "5000",
+  "x-ratelimit-remaining": "4831",
+  "x-ratelimit-reset": "1791637953"
+ },
+ "body": {
+  "message": "Pagination with the page parameter is not supported for large datasets, please use cursor based pagination (after/before)",
+  "documentation_url": "https://docs.github.com/rest/issues/issues#list-repository-issues",
+  "status": "422"
+ }
+}
