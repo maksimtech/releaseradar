@@ -8,7 +8,8 @@ LABEL org.opencontainers.image.source="https://github.com/maksimtech/releaserada
 LABEL org.opencontainers.image.licenses="MIT"
 
 # System packages, upgraded at build time: a Debian fix reaches the image
-# through a rebuild and nobody has to chase it.
+# through a rebuild and nobody has to chase it. Nothing is added: the CLI and
+# the MCP server need Python alone.
 RUN apt-get update && \
     apt-get upgrade -y && \
     apt-get clean && \
@@ -32,13 +33,17 @@ RUN pip install --no-cache-dir --root-user-action=ignore -U pip
 COPY pyproject.toml README.md LICENSE /app/build/
 COPY releaseradar/ /app/build/releaseradar/
 
+# `[mcp]` on both branches: the extra is optional on PyPI, where a cron job
+# running `releaseradar sync` wants none of the MCP SDK, and present in the
+# image, where `docker run -i … mcp` has to be a working server.
 RUN case "${RELEASERADAR_SOURCE}" in \
         local) pip wheel --no-deps --no-cache-dir --wheel-dir /app/wheel /app/build && \
-               { pip install --no-cache-dir --root-user-action=ignore --only-binary :all: /app/wheel/*.whl || \
-                 pip install --no-cache-dir --root-user-action=ignore /app/wheel/*.whl ; } ;; \
+               WHEEL="$(ls /app/wheel/*.whl)" && \
+               { pip install --no-cache-dir --root-user-action=ignore --only-binary :all: "${WHEEL}[mcp]" || \
+                 pip install --no-cache-dir --root-user-action=ignore "${WHEEL}[mcp]" ; } ;; \
         pypi) test -n "${RELEASERADAR_VERSION}" || { echo "RELEASERADAR_VERSION is required with RELEASERADAR_SOURCE=pypi" >&2; exit 1; } && \
-              { pip install --no-cache-dir --root-user-action=ignore --only-binary :all: "releaseradar==${RELEASERADAR_VERSION}" || \
-                pip install --no-cache-dir --root-user-action=ignore "releaseradar==${RELEASERADAR_VERSION}" ; } ;; \
+              { pip install --no-cache-dir --root-user-action=ignore --only-binary :all: "releaseradar[mcp]==${RELEASERADAR_VERSION}" || \
+                pip install --no-cache-dir --root-user-action=ignore "releaseradar[mcp]==${RELEASERADAR_VERSION}" ; } ;; \
         *) echo "RELEASERADAR_SOURCE must be 'local' or 'pypi'" >&2; exit 1 ;; \
     esac && \
     rm -rf /app/build /app/wheel
@@ -58,5 +63,7 @@ USER releaseradar
 VOLUME ["/home/releaseradar/.releaseradar"]
 WORKDIR /home/releaseradar/.releaseradar
 
+# `releaseradar track owner/repo`, `releaseradar sync`, or — with `-i` — the
+# MCP server: `docker run -i -v …:/home/releaseradar/.releaseradar maksimtech/releaseradar mcp`
 ENTRYPOINT ["releaseradar"]
 CMD ["--help"]

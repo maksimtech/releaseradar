@@ -2,24 +2,27 @@
 
 **Track GitHub repo lifecycles — from issue open to release published.**
 
-ReleaseRadar polls GitHub's REST API for the repos you care about and records
-every state change (issue opened/closed, PR opened/merged/closed, release
-published) in a local SQLite database. Run it on a schedule, query it from the
-CLI, or call it as an MCP tool from inside Claude.
+ReleaseRadar polls GitHub's REST API for the repositories you care about and
+records every transition it sees — issue closed, PR merged, release published —
+in a local SQLite database. Run it on a schedule, read it from the CLI, pipe
+its new events wherever they should go, or call it as an MCP server from Claude.
 
 Part of the Radar suite: [MailRadar](https://github.com/maksimtech/mailradar) ·
 [PatchRadar](https://github.com/maksimtech/patchradar) ·
-[ApkRadar](https://github.com/maksimtech/apkradar) · **ReleaseRadar**
+[ApkRadar](https://github.com/maksimtech/apkradar) ·
+[CookieRadar](https://github.com/maksimtech/cookieradar) ·
+[ExeRadar](https://github.com/maksimtech/exeradar) · **ReleaseRadar**
 
 ---
 
 ## Installation
 
 ```bash
-pip install releaseradar
+pip install releaseradar          # the CLI
+pip install "releaseradar[mcp]"   # the CLI and the MCP server
 ```
 
-Or with Docker:
+Or with Docker, where the MCP server is always included:
 
 ```bash
 docker run --rm -v ~/.releaseradar:/home/releaseradar/.releaseradar \
@@ -34,27 +37,37 @@ docker run --rm -v ~/.releaseradar:/home/releaseradar/.releaseradar \
 releaseradar track torvalds/linux
 releaseradar track psf/requests
 
-# Fetch the latest state from GitHub
+# Fetch the current state. The first sync of a repo seeds the database and
+# reports nothing: history is not news. From then on, only transitions are.
 releaseradar sync
 
-# See what's new
+# See what happened
 releaseradar events --limit 30
 
 # Check a single repo
 releaseradar status torvalds/linux
 
-# List all tracked repos with open counts and latest release
+# List all tracked repos with open counts, latest release and last sync
 releaseradar list
+
+# Print the events nobody was told about yet, then mark them notified
+releaseradar notify --json | your-delivery-script
 ```
 
-## Authentication
+## Authentication and cost
 
-Public repos work without a token. For private repos or to raise the API rate
-limit (5 000 req/h authenticated vs 60 unauthenticated):
+Public repos work without a token. GitHub allows **60 requests an hour** to an
+anonymous client and **5 000** to a token, and a sync walks the issues, pull
+requests and releases of a repository 100 at a time: the first sync of
+`psf/requests` is about 105 requests, so it does not fit in the anonymous quota
+at all. Later syncs ask only for what changed since the last one.
 
 ```bash
 export GITHUB_TOKEN=ghp_your_token_here
 ```
+
+When the quota runs out, `sync` says so, says when it resets, and exits 1;
+nothing is written for a repository whose sync was refused.
 
 ## Configuration
 
@@ -66,33 +79,78 @@ export GITHUB_TOKEN=ghp_your_token_here
 ## MCP server
 
 ReleaseRadar ships an [MCP](https://modelcontextprotocol.io/) server so Claude
-can query and update the tracker directly.
+can query and update the tracker directly. It runs over stdio, opens no port,
+and uses the same database and the same `GITHUB_TOKEN` as the CLI.
+
+With Claude Code, one command registers it:
 
 ```bash
-# In your MCP client config (e.g. ~/.config/claude/mcp.json):
+pip install "releaseradar[mcp]"
+claude mcp add --scope user releaseradar -- releaseradar mcp
+```
+
+Or, checked into a project for everyone who opens it, `.mcp.json`:
+
+```json
 {
-  "releaseradar": {
-    "command": "python",
-    "args": ["-m", "releaseradar.mcp_server"],
-    "env": { "GITHUB_TOKEN": "ghp_…" }
+  "mcpServers": {
+    "releaseradar": {
+      "command": "releaseradar",
+      "args": ["mcp"],
+      "env": { "GITHUB_TOKEN": "ghp_…" }
+    }
+  }
+}
+```
+
+From the Docker image, the same server with `-i`:
+
+```json
+{
+  "mcpServers": {
+    "releaseradar": {
+      "command": "docker",
+      "args": ["run", "-i", "--rm",
+               "-v", "/home/you/.releaseradar:/home/releaseradar/.releaseradar",
+               "-e", "GITHUB_TOKEN",
+               "maksimtech/releaseradar", "mcp"]
+    }
   }
 }
 ```
 
 Tools exposed: `track_repo`, `untrack_repo`, `list_repos`, `sync_repo`,
-`sync_all`, `repo_status`, `recent_events`.
+`sync_all`, `repo_status`, `recent_events`. A repository GitHub refuses comes
+back as a tool error with the reason — not found, rate limit with its reset
+time, bad token — never as a traceback.
 
 ## CLI reference
 
 ```
 releaseradar track <owner/repo>     Start tracking a repository
-releaseradar untrack <owner/repo>   Stop tracking and remove all data
+releaseradar untrack <owner/repo>   Stop tracking and remove all its data
 releaseradar list                   List tracked repos with summary
-releaseradar sync [owner/repo]      Fetch latest state from GitHub
-releaseradar status <owner/repo>    Show open issues/PRs and latest release
-releaseradar events [--limit N]     Show event log
+releaseradar sync [owner/repo]      Fetch what changed since the last sync
+releaseradar status <owner/repo>    Open issues/PRs, latest release, last sync
+releaseradar events [--limit N]     Show the event log, newest first
 releaseradar events --pending       Show unnotified events only
+releaseradar notify [--json]        Print unnotified events, then mark them notified
+releaseradar notify --dry-run       Print without marking
+releaseradar mcp                    Run the MCP server on stdio
 ```
+
+## What counts as an event
+
+| Kind | When |
+|---|---|
+| `issue_opened` | an issue the tracker had not seen, open |
+| `issue_closed` | an issue it had seen open is now closed |
+| `pr_opened` | a pull request it had not seen, open |
+| `pr_merged` / `pr_closed` | a pull request it had seen open is now merged / closed |
+| `release_published` | a release it had not seen (drafts are not releases) |
+
+A comment, a label or an edit changes nothing above and produces no event.
+The first sync of a repository seeds its state and produces none either.
 
 ## License
 
