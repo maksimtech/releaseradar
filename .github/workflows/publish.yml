@@ -51,10 +51,14 @@ jobs:
           NORMALIZED=$(python3 -c "parts='${STRIPPED}'.split('.'); print('.'.join(str(int(p)) for p in parts))")
           echo "VERSION=${NORMALIZED}" >> "$GITHUB_OUTPUT"
 
+      # With a grace of 45 s, not 0: on v2026.2 the wait saw the file and the
+      # fresh venv two steps later was answered by an edge that had not — "from
+      # versions: 2026.1" — and the job went red after a successful upload.
+      # Two resolvers, two caches; the script's own default exists for this.
       - name: Wait for the index to catch up
         env:
           VERSION: ${{ steps.version.outputs.VERSION }}
-        run: bash .github/scripts/wait_for_pypi.sh releaseradar "$VERSION" 30 20 0
+        run: bash .github/scripts/wait_for_pypi.sh releaseradar "$VERSION" 30 20 45
 
       - name: Check the published wheel installs and runs
         env:
