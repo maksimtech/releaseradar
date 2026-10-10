@@ -1,113 +1,193 @@
-"""Tests for sync.py — mocked GitHub API calls."""
+"""What a sync records and what it reports — GitHub replayed from recordings."""
 
+from __future__ import annotations
+
+import sqlite3
 from pathlib import Path
-from unittest.mock import patch
 
+import httpx
 import pytest
 
 from releaseradar import db as _db
-from releaseradar.sync import sync_repo, sync_all
+from releaseradar import github as gh
+from releaseradar.sync import NotTracked, sync_all, sync_repo
+from tests.conftest import API, empty_page, recorded, replay, route_repo
 
 
-_ISSUE_RAW = {
-    "number": 1,
-    "title": "Bug report",
-    "state": "open",
-    "html_url": "https://github.com/t/l/issues/1",
-    "created_at": "2026-01-01T00:00:00Z",
-    "closed_at": None,
-    "updated_at": "2026-01-01T00:00:00Z",
-}
-
-_PR_RAW = {
-    "number": 1,
-    "title": "Fix the bug",
-    "state": "open",
-    "html_url": "https://github.com/t/l/pull/1",
-    "created_at": "2026-01-02T00:00:00Z",
-    "merged_at": None,
-    "updated_at": "2026-01-02T00:00:00Z",
-    "body": "Fixes #1",
-}
-
-_RELEASE_RAW = {
-    "tag_name": "v1.0.0",
-    "name": "First release",
-    "html_url": "https://github.com/t/l/releases/tag/v1.0.0",
-    "published_at": "2026-01-03T00:00:00Z",
-    "prerelease": False,
-    "body": None,
-}
+def track(db_path: Path, owner: str, name: str) -> _db._DB:
+    database = _db.open_db(db_path)
+    database.add_repo(owner, name)
+    return database
 
 
-@pytest.fixture
-def db_path(tmp_path: Path) -> Path:
-    return tmp_path / "test.db"
+def an_hour_later(items: list[dict]) -> list[dict]:
+    """The same items with `updated_at` moved forward one hour and nothing else
+    touched — what a comment or a label does to an issue."""
+    later = []
+    for item in items:
+        stamp = item["updated_at"]
+        hour = (int(stamp[11:13]) + 1) % 24
+        later.append({**item, "updated_at": f"{stamp[:11]}{hour:02d}{stamp[13:]}"})
+    return later
 
 
-class TestSyncRepo:
-    def test_sync_emits_events(self, db_path):
-        with (
-            patch("releaseradar.sync.gh.fetch_issues", return_value=[_ISSUE_RAW]),
-            patch("releaseradar.sync.gh.fetch_pull_requests", return_value=[_PR_RAW]),
-            patch("releaseradar.sync.gh.fetch_releases", return_value=[_RELEASE_RAW]),
-        ):
-            events = sync_repo("t", "l", token=None, db_path=db_path)
+class TestFirstSync:
+    def test_it_seeds_the_state_and_reports_nothing(self, db_path, github):
+        """17 releases of cookieradar, published before anyone tracked the repo: the
+        first sync stores them and emits no event, because it saw no transition."""
+        route_repo(github, "maksimtech", "cookieradar",
+                   "gh_codecov-mcp_issues_all.json", "gh_codecov-mcp_pulls_all.json", "gh_cookieradar_releases.json")
+        database = track(db_path, "maksimtech", "cookieradar")
 
-        kinds = {e["kind"] for e in events}
-        assert "issue_opened" in kinds
-        assert "pr_opened" in kinds
-        assert "release_published" in kinds
+        events = sync_repo("maksimtech", "cookieradar", db_path=db_path)
 
-    def test_sync_idempotent(self, db_path):
-        """Second sync of the same data should emit no new events."""
-        with (
-            patch("releaseradar.sync.gh.fetch_issues", return_value=[_ISSUE_RAW]),
-            patch("releaseradar.sync.gh.fetch_pull_requests", return_value=[_PR_RAW]),
-            patch("releaseradar.sync.gh.fetch_releases", return_value=[_RELEASE_RAW]),
-        ):
-            sync_repo("t", "l", token=None, db_path=db_path)
-            events2 = sync_repo("t", "l", token=None, db_path=db_path)
+        assert events == []
+        summary = database.repo_summary("maksimtech", "cookieradar")
+        assert summary["latest_release"]["tag_name"] == "v2026.44"
+        assert summary["last_synced_at"] is not None
+        assert database.recent_events() == []
 
-        assert events2 == []
+    def test_it_asks_for_everything(self, db_path, github):
+        routes = route_repo(github, "psf", "requests", "gh_requests_issues_open_5.json",
+                            "gh_requests_pulls_open_5.json", "gh_codecov-mcp_releases.json")
+        track(db_path, "psf", "requests")
+        sync_repo("psf", "requests", db_path=db_path)
+        assert "since" not in routes["issues"].calls.last.request.url.params
 
-    def test_sync_state_change(self, db_path):
-        """Closing an issue emits issue_closed event."""
-        with (
-            patch("releaseradar.sync.gh.fetch_issues", return_value=[_ISSUE_RAW]),
-            patch("releaseradar.sync.gh.fetch_pull_requests", return_value=[]),
-            patch("releaseradar.sync.gh.fetch_releases", return_value=[]),
-        ):
-            sync_repo("t", "l", token=None, db_path=db_path)
+    def test_an_empty_repository_syncs_to_nothing(self, db_path, github):
+        route_repo(github, "maksimtech", "codecov-mcp",
+                   "gh_codecov-mcp_issues_all.json", "gh_codecov-mcp_pulls_all.json", "gh_codecov-mcp_releases.json")
+        database = track(db_path, "maksimtech", "codecov-mcp")
+        assert sync_repo("maksimtech", "codecov-mcp", db_path=db_path) == []
+        summary = database.repo_summary("maksimtech", "codecov-mcp")
+        assert (summary["open_issues"], summary["open_prs"], summary["latest_release"]) == (0, 0, None)
 
-        closed_issue = {
-            **_ISSUE_RAW,
-            "state": "closed",
-            "closed_at": "2026-01-05T00:00:00Z",
-            "updated_at": "2026-01-05T00:00:00Z",
-        }
-        with (
-            patch("releaseradar.sync.gh.fetch_issues", return_value=[closed_issue]),
-            patch("releaseradar.sync.gh.fetch_pull_requests", return_value=[]),
-            patch("releaseradar.sync.gh.fetch_releases", return_value=[]),
-        ):
-            events = sync_repo("t", "l", token=None, db_path=db_path)
 
-        assert any(e["kind"] == "issue_closed" for e in events)
+class TestLaterSyncs:
+    def test_the_second_sync_asks_only_for_what_changed(self, db_path, github):
+        routes = route_repo(github, "psf", "requests", "gh_requests_issues_open_5.json",
+                            "gh_requests_pulls_open_5.json", "gh_codecov-mcp_releases.json")
+        database = track(db_path, "psf", "requests")
+        sync_repo("psf", "requests", db_path=db_path)
+        first = database.repo_summary("psf", "requests")["last_synced_at"]
+
+        sync_repo("psf", "requests", db_path=db_path)
+
+        assert routes["issues"].calls.last.request.url.params["since"] == first
+
+    def test_an_update_without_a_state_change_is_not_an_event(self, db_path, github):
+        first = recorded("gh_requests_issues_open_5.json")["body"]
+        base = f"{API}/repos/psf/requests"
+        issues = github.get(f"{base}/issues").mock(return_value=httpx.Response(200, json=first))
+        github.get(f"{base}/pulls").mock(return_value=empty_page())
+        github.get(f"{base}/releases").mock(return_value=empty_page())
+        track(db_path, "psf", "requests")
+        sync_repo("psf", "requests", db_path=db_path)
+
+        issues.mock(return_value=httpx.Response(200, json=an_hour_later(first)))
+        assert sync_repo("psf", "requests", db_path=db_path) == []
+
+    def test_closing_an_issue_is_an_event(self, db_path, github):
+        first = recorded("gh_requests_issues_open_5.json")["body"]
+        base = f"{API}/repos/psf/requests"
+        issues = github.get(f"{base}/issues").mock(return_value=httpx.Response(200, json=first))
+        github.get(f"{base}/pulls").mock(return_value=empty_page())
+        github.get(f"{base}/releases").mock(return_value=empty_page())
+        database = track(db_path, "psf", "requests")
+        sync_repo("psf", "requests", db_path=db_path)
+
+        closed = [{**i, "state": "closed", "closed_at": "2026-10-10T12:00:00Z",
+                   "updated_at": "2026-10-10T12:00:00Z"} if i["number"] == 7630 else i for i in first]
+        issues.mock(return_value=httpx.Response(200, json=closed))
+        events = sync_repo("psf", "requests", db_path=db_path)
+
+        assert events == [{"kind": "issue_closed", "number": 7630, "title": "Incorrect type annotation for iter_lines"}]
+        pending = database.pending_events()
+        assert [(e["kind"], e["ref_number"]) for e in pending] == [("issue_closed", 7630)]
+
+    def test_a_pull_request_that_appears_merged_is_one_event(self, db_path, github):
+        """Opened and merged between two syncs: the tracker saw it arrive merged, and
+        says `pr_merged`, not `pr_opened` followed by nothing."""
+        prs = recorded("gh_requests_pulls_open_5.json")["body"]
+        base = f"{API}/repos/psf/requests"
+        github.get(f"{base}/issues").mock(return_value=empty_page())
+        pulls = github.get(f"{base}/pulls").mock(return_value=httpx.Response(200, json=prs[1:]))
+        github.get(f"{base}/releases").mock(return_value=empty_page())
+        track(db_path, "psf", "requests")
+        sync_repo("psf", "requests", db_path=db_path)
+
+        merged = {**prs[0], "state": "closed", "merged_at": "2026-10-10T12:00:00Z",
+                  "updated_at": "2026-10-10T12:00:00Z"}
+        pulls.mock(return_value=httpx.Response(200, json=[merged, *prs[1:]]))
+        events = sync_repo("psf", "requests", db_path=db_path)
+
+        assert [(e["kind"], e["number"]) for e in events] == [("pr_merged", prs[0]["number"])]
+
+    def test_a_new_release_is_an_event_and_a_known_one_is_not(self, db_path, github):
+        releases = recorded("gh_cookieradar_releases.json")["body"]
+        base = f"{API}/repos/maksimtech/cookieradar"
+        github.get(f"{base}/issues").mock(return_value=empty_page())
+        github.get(f"{base}/pulls").mock(return_value=empty_page())
+        route = github.get(f"{base}/releases").mock(return_value=httpx.Response(200, json=releases[1:]))
+        track(db_path, "maksimtech", "cookieradar")
+        sync_repo("maksimtech", "cookieradar", db_path=db_path)
+
+        route.mock(return_value=httpx.Response(200, json=releases))
+        events = sync_repo("maksimtech", "cookieradar", db_path=db_path)
+
+        assert events == [{"kind": "release_published", "tag": "v2026.44", "name": "CookieRadar 2026.44"}]
+        assert sync_repo("maksimtech", "cookieradar", db_path=db_path) == []
+
+    def test_a_draft_release_is_neither_stored_nor_an_event(self, db_path, github):
+        """Derived from the recorded v2026.44: a draft has `published_at: null`."""
+        real = recorded("gh_cookieradar_releases.json")["body"][0]
+        draft = {**real, "id": real["id"] + 1, "tag_name": "v2026.45-draft", "name": "draft",
+                 "draft": True, "published_at": None}
+        base = f"{API}/repos/maksimtech/cookieradar"
+        github.get(f"{base}/issues").mock(return_value=empty_page())
+        github.get(f"{base}/pulls").mock(return_value=empty_page())
+        route = github.get(f"{base}/releases").mock(return_value=httpx.Response(200, json=[real]))
+        database = track(db_path, "maksimtech", "cookieradar")
+        sync_repo("maksimtech", "cookieradar", db_path=db_path)
+
+        route.mock(return_value=httpx.Response(200, json=[draft, real]))
+        try:
+            events = sync_repo("maksimtech", "cookieradar", db_path=db_path)
+        except sqlite3.IntegrityError as exc:
+            pytest.fail(f"draft release crashed the sync: {exc}")
+
+        assert events == []
+        assert database.repo_summary("maksimtech", "cookieradar")["latest_release"]["tag_name"] == "v2026.44"
+
+
+class TestRefusals:
+    def test_a_repository_nobody_tracked_is_refused(self, db_path, github):
+        with pytest.raises(NotTracked, match="releaseradar track psf/requests"):
+            sync_repo("psf", "requests", db_path=db_path)
+        assert _db.open_db(db_path).list_repos() == []
+
+    def test_a_github_error_leaves_the_state_as_it_was(self, db_path, github):
+        """The 404 arrives on the first request; nothing was written, and the repo
+        is still waiting for its first sync."""
+        github.get(f"{API}/repos/maksimtech/does-not-exist-xyz/issues").mock(
+            return_value=replay("gh_missing_repo_issues_404.json"))
+        database = track(db_path, "maksimtech", "does-not-exist-xyz")
+        with pytest.raises(gh.GitHubError, match="not found"):
+            sync_repo("maksimtech", "does-not-exist-xyz", db_path=db_path)
+        assert database.repo_summary("maksimtech", "does-not-exist-xyz")["last_synced_at"] is None
 
 
 class TestSyncAll:
-    def test_sync_all_multiple_repos(self, db_path):
-        database = _db.open_db(db_path)
-        database.add_repo("t", "l")
-        database.add_repo("psf", "requests")
+    def test_every_tracked_repository_is_synced_and_one_failure_does_not_stop_the_rest(self, db_path, github):
+        route_repo(github, "maksimtech", "codecov-mcp",
+                   "gh_codecov-mcp_issues_all.json", "gh_codecov-mcp_pulls_all.json", "gh_codecov-mcp_releases.json")
+        github.get(f"{API}/repos/maksimtech/does-not-exist-xyz/issues").mock(
+            return_value=replay("gh_missing_repo_issues_404.json"))
+        database = track(db_path, "maksimtech", "codecov-mcp")
+        database.add_repo("maksimtech", "does-not-exist-xyz")
 
-        with (
-            patch("releaseradar.sync.gh.fetch_issues", return_value=[]),
-            patch("releaseradar.sync.gh.fetch_pull_requests", return_value=[]),
-            patch("releaseradar.sync.gh.fetch_releases", return_value=[]),
-        ):
-            results = sync_all(token=None, db_path=db_path)
+        results, errors = sync_all(db_path=db_path)
 
-        assert "t/l" in results
-        assert "psf/requests" in results
+        assert results == {"maksimtech/codecov-mcp": []}
+        assert list(errors) == ["maksimtech/does-not-exist-xyz"]
+        assert "not found" in errors["maksimtech/does-not-exist-xyz"]

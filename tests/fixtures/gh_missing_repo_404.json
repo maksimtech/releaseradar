@@ -1,0 +1,22 @@
+{
+ "_recorded": {
+  "url": "https://api.github.com/repos/maksimtech/does-not-exist-xyz",
+  "status": 404,
+  "date": "2026-10-10T11:15:54+00:00",
+  "x-ratelimit-remaining": "59",
+  "authenticated": false,
+  "note": "Recorded from api.github.com; replayed at the HTTP boundary by tests/test_tdd_analisi.py. Not hand-edited."
+ },
+ "status": 404,
+ "headers": {
+  "content-type": "application/json; charset=utf-8",
+  "x-ratelimit-limit": "60",
+  "x-ratelimit-remaining": "59",
+  "x-ratelimit-reset": "1791634559"
+ },
+ "body": {
+  "message": "Not Found",
+  "documentation_url": "https://docs.github.com/rest/repos/repos#get-a-repository",
+  "status": "404"
+ }
+}

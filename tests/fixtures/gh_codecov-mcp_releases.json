@@ -1,0 +1,18 @@
+{
+ "_recorded": {
+  "url": "https://api.github.com/repos/maksimtech/codecov-mcp/releases?per_page=100&page=1",
+  "status": 200,
+  "date": "2026-10-10T11:15:52+00:00",
+  "x-ratelimit-remaining": "4911",
+  "authenticated": true,
+  "note": "Recorded from api.github.com; replayed at the HTTP boundary by tests/test_tdd_analisi.py. Not hand-edited."
+ },
+ "status": 200,
+ "headers": {
+  "content-type": "application/json; charset=utf-8",
+  "x-ratelimit-limit": "5000",
+  "x-ratelimit-remaining": "4911",
+  "x-ratelimit-reset": "1791634000"
+ },
+ "body": []
+}

@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 from rich import print as rprint
@@ -14,7 +15,7 @@ from rich.table import Table
 from . import __version__
 from . import db as _db
 from . import github as gh
-from .sync import sync_all, sync_repo
+from .sync import NotTracked, sync_all, sync_repo
 
 app = typer.Typer(
     name="releaseradar",
@@ -25,6 +26,15 @@ console = Console()
 
 _TOKEN_ENV = "GITHUB_TOKEN"
 
+_ICONS = {
+    "issue_opened": "🐛",
+    "issue_closed": "✅",
+    "pr_opened": "🔀",
+    "pr_merged": "🟣",
+    "pr_closed": "❌",
+    "release_published": "🚀",
+}
+
 
 def _token() -> str | None:
     return os.environ.get(_TOKEN_ENV)
@@ -33,6 +43,18 @@ def _token() -> str | None:
 def _db_path() -> Path:
     path = os.environ.get("RELEASERADAR_DB")
     return Path(path) if path else _db._DEFAULT_DB
+
+
+def _fail(message: str) -> None:
+    rprint(f"[red]Error:[/red] {message}")
+    raise typer.Exit(1)
+
+
+def _split(repo: str) -> tuple[str, str]:
+    owner, sep, name = repo.strip().partition("/")
+    if not sep or not owner or not name or "/" in name:
+        _fail("repo must be in owner/repo format, e.g. torvalds/linux.")
+    return owner, name
 
 
 # ── version ──────────────────────────────────────────────────────────────────
@@ -46,7 +68,7 @@ def _version_callback(value: bool) -> None:
 @app.callback()
 def main(
     version: Annotated[
-        Optional[bool],
+        bool | None,
         typer.Option("--version", "-V", callback=_version_callback, is_eager=True,
                      help="Show version and exit."),
     ] = None,
@@ -61,15 +83,14 @@ def track(
     repo: Annotated[str, typer.Argument(help="owner/repo to start tracking (e.g. torvalds/linux)")],
 ) -> None:
     """Start tracking a GitHub repository."""
-    if "/" not in repo:
-        rprint("[red]Error:[/red] repo must be in owner/repo format.")
-        raise typer.Exit(1)
-    owner, name = repo.split("/", 1)
-
-    with console.status(f"Checking {owner}/{name}…"):
-        if not gh.repo_exists(owner, name, _token()):
-            rprint(f"[red]Error:[/red] {owner}/{name} not found or not accessible.")
-            raise typer.Exit(1)
+    owner, name = _split(repo)
+    try:
+        with console.status(f"Checking {owner}/{name}…"):
+            exists = gh.repo_exists(owner, name, _token())
+    except gh.GitHubError as exc:
+        _fail(str(exc))
+    if not exists:
+        _fail(f"{owner}/{name} not found or not accessible.")
 
     database = _db.open_db(_db_path())
     database.add_repo(owner, name)
@@ -84,16 +105,12 @@ def untrack(
     repo: Annotated[str, typer.Argument(help="owner/repo to stop tracking")],
 ) -> None:
     """Stop tracking a repository and remove all its data."""
-    if "/" not in repo:
-        rprint("[red]Error:[/red] repo must be in owner/repo format.")
-        raise typer.Exit(1)
-    owner, name = repo.split("/", 1)
+    owner, name = _split(repo)
     database = _db.open_db(_db_path())
     if database.remove_repo(owner, name):
         rprint(f"[yellow]✓[/yellow] Stopped tracking [bold]{owner}/{name}[/bold]")
     else:
-        rprint(f"[red]Error:[/red] {owner}/{name} was not being tracked.")
-        raise typer.Exit(1)
+        _fail(f"{owner}/{name} was not being tracked.")
 
 
 # ── list ──────────────────────────────────────────────────────────────────────
@@ -112,17 +129,18 @@ def list_repos() -> None:
     table.add_column("Open issues", justify="right")
     table.add_column("Open PRs", justify="right")
     table.add_column("Latest release")
-    table.add_column("Tracked since")
+    table.add_column("Last sync")
 
     for row in repos:
         summary = database.repo_summary(row["owner"], row["name"])
         latest = summary.get("latest_release")
+        synced = row["last_synced_at"]
         table.add_row(
             f"{row['owner']}/{row['name']}",
             str(summary.get("open_issues", "—")),
             str(summary.get("open_prs", "—")),
             latest["tag_name"] if latest else "[dim]none yet[/dim]",
-            row["added_at"][:10],
+            synced[:16].replace("T", " ") if synced else "[dim]never[/dim]",
         )
     console.print(table)
 
@@ -132,28 +150,32 @@ def list_repos() -> None:
 @app.command()
 def sync(
     repo: Annotated[
-        Optional[str],
-        typer.Argument(help="owner/repo to sync (omit to sync all)"),
+        str | None,
+        typer.Argument(help="owner/repo to sync (omit to sync all tracked repos)"),
     ] = None,
 ) -> None:
-    """Fetch the latest state from GitHub and record any changes."""
+    """Fetch what changed on GitHub since the last sync and record the events."""
     if repo:
-        if "/" not in repo:
-            rprint("[red]Error:[/red] repo must be in owner/repo format.")
-            raise typer.Exit(1)
-        owner, name = repo.split("/", 1)
-        with console.status(f"Syncing {owner}/{name}…"):
-            events = sync_repo(owner, name, token=_token(), db_path=_db_path())
+        owner, name = _split(repo)
+        try:
+            with console.status(f"Syncing {owner}/{name}…"):
+                events = sync_repo(owner, name, token=_token(), db_path=_db_path())
+        except (NotTracked, gh.GitHubError) as exc:
+            _fail(str(exc))
         _print_events({f"{owner}/{name}": events})
-    else:
-        database = _db.open_db(_db_path())
-        repos = database.list_repos()
-        if not repos:
-            rprint("[dim]Nothing to sync. Add a repo with [bold]releaseradar track[/bold].[/dim]")
-            return
-        with console.status("Syncing all tracked repos…"):
-            results = sync_all(token=_token(), db_path=_db_path())
-        _print_events(results)
+        return
+
+    database = _db.open_db(_db_path())
+    if not database.list_repos():
+        rprint("[dim]Nothing to sync. Add a repo with [bold]releaseradar track[/bold].[/dim]")
+        return
+    with console.status("Syncing all tracked repos…"):
+        results, errors = sync_all(token=_token(), db_path=_db_path())
+    _print_events(results)
+    for key, message in errors.items():
+        rprint(f"[red]✗ {key}:[/red] {message}")
+    if errors:
+        raise typer.Exit(1)
 
 
 def _print_events(results: dict[str, list[dict]]) -> None:
@@ -161,15 +183,6 @@ def _print_events(results: dict[str, list[dict]]) -> None:
     if total == 0:
         rprint("[dim]Nothing new.[/dim]")
         return
-
-    _ICONS = {
-        "issue_opened": "🐛",
-        "issue_closed": "✅",
-        "pr_opened": "🔀",
-        "pr_merged": "🟣",
-        "pr_closed": "❌",
-        "release_published": "🚀",
-    }
 
     for repo_key, events in results.items():
         if not events:
@@ -180,8 +193,7 @@ def _print_events(results: dict[str, list[dict]]) -> None:
             if e["kind"] == "release_published":
                 rprint(f"  {icon} [bold green]{e['tag']}[/bold green] — {e['name']}")
             else:
-                num = e.get("number", "")
-                rprint(f"  {icon} #{num} {e['title'][:72]}")
+                rprint(f"  {icon} #{e.get('number', '')} {e['title'][:72]}")
 
 
 # ── status ────────────────────────────────────────────────────────────────────
@@ -191,16 +203,12 @@ def status(
     repo: Annotated[str, typer.Argument(help="owner/repo to inspect")],
 ) -> None:
     """Show open issues, PRs and latest release for a tracked repo."""
-    if "/" not in repo:
-        rprint("[red]Error:[/red] repo must be in owner/repo format.")
-        raise typer.Exit(1)
-    owner, name = repo.split("/", 1)
+    owner, name = _split(repo)
     database = _db.open_db(_db_path())
 
     summary = database.repo_summary(owner, name)
     if not summary:
-        rprint(f"[red]{owner}/{name}[/red] is not being tracked.")
-        raise typer.Exit(1)
+        _fail(f"{owner}/{name} is not being tracked.")
 
     rprint(f"\n[bold]{owner}/{name}[/bold]")
     rprint(f"  Open issues : [yellow]{summary['open_issues']}[/yellow]")
@@ -210,48 +218,86 @@ def status(
         rprint(f"  Latest      : [green]{rel['tag_name']}[/green] ({rel['published_at'][:10]})")
     else:
         rprint("  Latest      : [dim]no release yet[/dim]")
+    synced = summary.get("last_synced_at")
+    rprint(f"  Last sync   : {synced.replace('T', ' ') if synced else '[dim]never[/dim]'}")
 
 
 # ── events ────────────────────────────────────────────────────────────────────
 
-@app.command()
-def events(
-    limit: Annotated[int, typer.Option("--limit", "-n", help="Number of events to show")] = 20,
-    pending: Annotated[bool, typer.Option("--pending", help="Show only unnotified events")] = False,
-) -> None:
-    """Show the event log."""
-    database = _db.open_db(_db_path())
-    if pending:
-        rows = database.pending_events()
-    else:
-        import sqlite3
-        with _db._connect(database.path) as conn:
-            rows = conn.execute(
-                """SELECT e.*, r.owner, r.name
-                   FROM events e JOIN repos r ON r.id = e.repo_id
-                   ORDER BY e.seen_at DESC LIMIT ?""",
-                (limit,),
-            ).fetchall()
-
-    if not rows:
-        rprint("[dim]No events.[/dim]")
-        return
-
+def _events_table(rows) -> Table:
     table = Table(show_header=True)
     table.add_column("When", style="dim")
     table.add_column("Repo", style="cyan")
     table.add_column("Event")
     table.add_column("Ref")
     table.add_column("N", justify="center")
-
     for r in rows:
         notified = "✓" if r["notified"] else "○"
         ref = r["ref_tag"] or (f"#{r['ref_number']}" if r["ref_number"] else "—")
-        table.add_row(
-            r["seen_at"][:16],
-            f"{r['owner']}/{r['name']}",
-            r["kind"],
-            ref,
-            notified,
-        )
-    console.print(table)
+        table.add_row(r["seen_at"][:16], f"{r['owner']}/{r['name']}", r["kind"], ref, notified)
+    return table
+
+
+@app.command()
+def events(
+    limit: Annotated[int, typer.Option("--limit", "-n", min=1, help="Number of events to show")] = 20,
+    pending: Annotated[bool, typer.Option("--pending", help="Show only unnotified events")] = False,
+) -> None:
+    """Show the event log, newest first."""
+    database = _db.open_db(_db_path())
+    rows = database.pending_events() if pending else database.recent_events(limit)
+    if not rows:
+        rprint("[dim]No events.[/dim]")
+        return
+    console.print(_events_table(rows))
+
+
+# ── notify ────────────────────────────────────────────────────────────────────
+
+@app.command()
+def notify(
+    as_json: Annotated[bool, typer.Option("--json", help="Print the events as a JSON array")] = False,
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Print without marking them notified")] = False,
+) -> None:
+    """Print the events nobody has been told about yet, then mark them notified.
+
+    Pipe it into whatever delivers: `releaseradar notify --json | ...`. Nothing
+    printed means nothing new; the exit code is 0 either way.
+    """
+    database = _db.open_db(_db_path())
+    rows = database.pending_events()
+    if not rows:
+        if as_json:
+            print("[]")
+        else:
+            rprint("[dim]Nothing to notify.[/dim]")
+        return
+    if as_json:
+        print(json.dumps([
+            {
+                "id": r["id"], "repo": f"{r['owner']}/{r['name']}", "kind": r["kind"],
+                "ref_number": r["ref_number"], "ref_tag": r["ref_tag"], "seen_at": r["seen_at"],
+                "payload": json.loads(r["payload"]) if r["payload"] else None,
+            }
+            for r in rows
+        ], indent=2))
+    else:
+        console.print(_events_table(rows))
+    if not dry_run:
+        database.mark_notified([int(r["id"]) for r in rows])
+
+
+# ── mcp ───────────────────────────────────────────────────────────────────────
+
+@app.command()
+def mcp() -> None:
+    """Run the MCP server on stdio (for `claude mcp add releaseradar -- releaseradar mcp`)."""
+    try:
+        from .mcp_server import main as mcp_main
+    except ImportError:
+        _fail("the MCP server needs the `mcp` package: pip install 'releaseradar[mcp]'.")
+    mcp_main()
+
+
+if __name__ == "__main__":
+    app()
