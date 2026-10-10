@@ -89,16 +89,21 @@ def _get(client: httpx.Client, url: str, subject: str, params: dict | None = Non
 
 def _paginate(client: httpx.Client, url: str, subject: str, params: dict | None = None,
               stop_when: Callable[[dict], bool] | None = None) -> list[dict]:
-    """Every page of a list endpoint, oldest-first within GitHub's ordering.
+    """Every page of a list endpoint, in GitHub's ordering.
+
+    The next page is the one GitHub names in the `Link` header, not a `page`
+    number counted here: on large datasets GitHub answers 422 to `page=100`
+    ("please use cursor based pagination") and puts an `after=` cursor in the
+    link from the first page on. python/cpython, with 156 000 issues and pull
+    requests, was the first tracked repository to say so, on 2026-10-10.
 
     `stop_when(item)` ends the walk at the first item it accepts (that item and
     the rest of its page are dropped): with `sort=updated&direction=desc` it is
     how a sync stops at the first thing it has already seen.
     """
     results: list[dict] = []
-    page = 1
+    resp = _get(client, url, subject, params={**(params or {}), "per_page": _PAGE})
     while True:
-        resp = _get(client, url, subject, params={**(params or {}), "per_page": _PAGE, "page": page})
         batch = resp.json()
         if not batch:
             break
@@ -108,9 +113,10 @@ def _paginate(client: httpx.Client, url: str, subject: str, params: dict | None 
                     results.extend(batch[:index])
                     return results
         results.extend(batch)
-        if len(batch) < _PAGE:
+        next_page = resp.links.get("next", {}).get("url")
+        if not next_page:
             break
-        page += 1
+        resp = _get(client, next_page, subject)
     return results
 
 
@@ -123,13 +129,15 @@ def _updated_before(since: str | None) -> Callable[[dict], bool] | None:
 # ── public API ───────────────────────────────────────────────────────────────
 
 def fetch_issues(owner: str, repo: str, token: str | None = None,
-                 since: str | None = None) -> list[dict[str, Any]]:
-    """Issues (not PRs), all states, most recently updated first.
+                 since: str | None = None, state: str = "all") -> list[dict[str, Any]]:
+    """Issues (not PRs), most recently updated first.
 
     `since` is an ISO-8601 instant: only issues updated at or after it come back,
-    which is GitHub's own `since` filter on this endpoint.
+    which is GitHub's own `since` filter on this endpoint. `state` is `all`,
+    `open` or `closed`; a first sync asks for `open` only, because what was
+    closed before anyone watched is not a transition anyone will see.
     """
-    params: dict = {"state": "all", "sort": "updated", "direction": "desc"}
+    params: dict = {"state": state, "sort": "updated", "direction": "desc"}
     if since:
         params["since"] = since
     with _client(token) as c:
@@ -139,13 +147,13 @@ def fetch_issues(owner: str, repo: str, token: str | None = None,
 
 
 def fetch_pull_requests(owner: str, repo: str, token: str | None = None,
-                        since: str | None = None) -> list[dict[str, Any]]:
-    """Pull requests, all states, most recently updated first.
+                        since: str | None = None, state: str = "all") -> list[dict[str, Any]]:
+    """Pull requests, most recently updated first.
 
     `/pulls` has no `since` parameter (GitHub ignores it), so the walk is cut at
     the first PR updated before `since` instead.
     """
-    params: dict = {"state": "all", "sort": "updated", "direction": "desc"}
+    params: dict = {"state": state, "sort": "updated", "direction": "desc"}
     with _client(token) as c:
         return _paginate(c, f"{_BASE}/repos/{owner}/{repo}/pulls", f"{owner}/{repo}", params,
                          stop_when=_updated_before(since))

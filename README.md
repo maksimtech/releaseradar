@@ -57,10 +57,11 @@ releaseradar notify --json | your-delivery-script
 ## Authentication and cost
 
 Public repos work without a token. GitHub allows **60 requests an hour** to an
-anonymous client and **5 000** to a token, and a sync walks the issues, pull
-requests and releases of a repository 100 at a time: the first sync of
-`psf/requests` is about 105 requests, so it does not fit in the anonymous quota
-at all. Later syncs ask only for what changed since the last one.
+anonymous client and **5 000** to a token, and a sync walks pages of 100. The
+first sync of a repository asks only for what is open now (for `psf/requests`
+a handful of requests; for `python/cpython`, with 9 700 open issues and pull
+requests, about a hundred, which does not fit in the anonymous quota); later
+syncs ask only for what changed since the last one, closed included.
 
 ```bash
 export GITHUB_TOKEN=ghp_your_token_here

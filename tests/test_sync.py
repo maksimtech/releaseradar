@@ -58,12 +58,17 @@ class TestFirstSync:
         assert summary["last_synced_at"] is not None
         assert database.recent_events() == []
 
-    def test_it_asks_for_everything(self, db_path, github):
+    def test_it_asks_for_what_is_open_now_and_nothing_older(self, db_path, github):
+        """What was closed before anyone watched is not a transition this tracker
+        can report; for python/cpython it is 146 000 items against 9 700 open."""
         routes = route_repo(github, "psf", "requests", "gh_requests_issues_open_5.json",
                             "gh_requests_pulls_open_5.json", "gh_codecov-mcp_releases.json")
         track(db_path, "psf", "requests")
         sync_repo("psf", "requests", db_path=db_path)
-        assert "since" not in routes["issues"].calls.last.request.url.params
+        for name in ("issues", "pulls"):
+            params = routes[name].calls.last.request.url.params
+            assert params["state"] == "open", name
+            assert "since" not in params, name
 
     def test_an_empty_repository_syncs_to_nothing(self, db_path, github):
         route_repo(github, "maksimtech", "codecov-mcp",
@@ -84,7 +89,10 @@ class TestLaterSyncs:
 
         sync_repo("psf", "requests", db_path=db_path)
 
-        assert routes["issues"].calls.last.request.url.params["since"] == first
+        params = routes["issues"].calls.last.request.url.params
+        assert params["since"] == first
+        assert params["state"] == "all", "closed since the last sync is where the transitions are"
+        assert routes["pulls"].calls.last.request.url.params["state"] == "all"
 
     def test_an_update_without_a_state_change_is_not_an_event(self, db_path, github):
         first = recorded("gh_requests_issues_open_5.json")["body"]

@@ -6,7 +6,7 @@ import httpx
 import pytest
 
 from releaseradar import github as gh
-from tests.conftest import API, recorded, replay
+from tests.conftest import API, empty_page, recorded, replay
 
 # ── extract_linked_issues ─────────────────────────────────────────────────────
 
@@ -188,13 +188,46 @@ class TestPagination:
         assert [p["number"] for p in kept] == [p["number"] for p in prs if p["updated_at"] >= since]
         assert "since" not in route.calls.last.request.url.params
 
-    def test_a_full_page_asks_for_the_next_one(self, github):
-        """A page of exactly 100 means there may be more; the recorded cookieradar
-        releases (17) are repeated to fill one, and the second page is asked for."""
+    def test_the_next_page_is_the_one_github_names_in_the_link_header(self, github):
+        """Recorded from python/cpython: page 1 of 2-per-page comes with
+        `Link: <.../repositories/81598961/issues?...&page=2&after=Y3Vyc...>; rel="next"`.
+        The walk follows that URL - cursor included, on the /repositories/<id>
+        path GitHub chose - and stops when a page carries no `next`."""
+        first = replay("gh_cpython_issues_page1_of2.json", last_page=False)
+        next_url = first.links["next"]["url"]
+        github.get(f"{API}/repos/python/cpython/issues").mock(return_value=first)
+        second = github.get(next_url).mock(return_value=httpx.Response(200, json=[{"number": 1, "updated_at": "x"}]))
+
+        items = gh.fetch_issues("python", "cpython")
+
+        assert second.called
+        assert "after=" in str(second.calls.last.request.url)
+        assert len(items) == len([i for i in first.json() if "pull_request" not in i]) + 1
+        assert github.calls.call_count == 2
+
+    def test_a_full_page_without_a_next_link_is_the_last_page(self, github):
+        """Counting pages is what GitHub refuses on large datasets (422 at
+        page=100, recorded); a page is the last one when no `next` is offered,
+        however full it is."""
         one = recorded("gh_cookieradar_releases.json")["body"]
         full = [{**r, "id": r["id"] + n, "tag_name": f"{r['tag_name']}-{n}"} for n in range(6) for r in one][:100]
         route = github.get(f"{API}/repos/maksimtech/cookieradar/releases").mock(
-            side_effect=[httpx.Response(200, json=full), httpx.Response(200, json=one)])
-        releases = gh.fetch_releases("maksimtech", "cookieradar")
-        assert len(releases) == 117
-        assert [c.request.url.params["page"] for c in route.calls] == ["1", "2"]
+            return_value=httpx.Response(200, json=full))
+        assert len(gh.fetch_releases("maksimtech", "cookieradar")) == 100
+        assert route.call_count == 1
+
+    def test_the_refusal_of_page_based_pagination_is_quoted(self, github):
+        github.get(f"{API}/repos/python/cpython/issues").mock(
+            return_value=replay("gh_cpython_issues_page100_422.json"))
+        with pytest.raises(gh.GitHubError) as exc:
+            gh.fetch_issues("python", "cpython")
+        assert exc.value.status == 422
+        assert "cursor based pagination" in str(exc.value)
+
+    def test_state_is_passed_through(self, github):
+        issues = github.get(f"{API}/repos/psf/requests/issues").mock(return_value=empty_page())
+        pulls = github.get(f"{API}/repos/psf/requests/pulls").mock(return_value=empty_page())
+        gh.fetch_issues("psf", "requests", state="open")
+        gh.fetch_pull_requests("psf", "requests", state="open")
+        assert issues.calls.last.request.url.params["state"] == "open"
+        assert pulls.calls.last.request.url.params["state"] == "open"
