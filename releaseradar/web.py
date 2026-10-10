@@ -47,7 +47,10 @@ class Poller(threading.Thread):
         self.token = token
         self.db_path = db_path
         self._wake = threading.Event()
-        self._stop = threading.Event()
+        # Not `_stop`: threading.Thread has a private method of that name, which
+        # join() calls on Linux — and found an Event in its place on the first
+        # CI run of this class ("'Event' object is not callable").
+        self._stopping = threading.Event()
         self._lock = threading.Lock()
         self.running = False
         self.runs = 0
@@ -65,11 +68,11 @@ class Poller(threading.Thread):
         self._wake.set()
 
     def stop(self) -> None:
-        self._stop.set()
+        self._stopping.set()
         self._wake.set()
 
     def run(self) -> None:
-        while not self._stop.is_set():
+        while not self._stopping.is_set():
             self.sync_once()
             self._wake.clear()
             self._wake.wait(self.interval)

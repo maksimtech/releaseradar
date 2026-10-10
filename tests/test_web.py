@@ -172,6 +172,8 @@ class TestCommand:
 
         from releaseradar.cli import app
 
-        result = CliRunner().invoke(app, ["web", "--help"])
+        # No colour: on a CI runner rich paints the help and splits "--every"
+        # with escape codes, which is not what a reader of --help sees.
+        result = CliRunner(env={"NO_COLOR": "1", "TERM": "dumb", "COLUMNS": "200"}).invoke(app, ["web", "--help"])
         assert result.exit_code == 0
         assert "--every" in result.output and "--port" in result.output
