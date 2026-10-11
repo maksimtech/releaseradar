@@ -169,6 +169,22 @@ releaseradar mcp                    Run the MCP server on stdio
 A comment, a label or an edit changes nothing above and produces no event.
 The first sync of a repository seeds its state and produces none either.
 
+## Security
+
+Report a vulnerability as described in [SECURITY.md](SECURITY.md), which also gives
+the response times, how customers are told and how to roll back.
+
+Every GitHub release from 2026.5 on carries CycloneDX SBOMs of the Docker image and
+of the Python environment, and dated Trivy reports of the image and of the repository
+at the tag. They are an automated scan for known vulnerabilities, not a penetration
+test.
+
+For customers subject to NIS2, [docs/nis2-compliance.md](docs/nis2-compliance.md)
+(in Italian) answers the seven questions a supplier of software gets asked: what the
+software is made of, what it sends to api.github.com and what it keeps on disk, who
+can reach the dashboard and the MCP server, how it is checked before release, and
+what it does not have.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
