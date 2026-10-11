@@ -217,6 +217,12 @@ SBOM:
 | `EVIDENCE-<versione>.md` | cosa sono questi file, quando e da quale commit e digest dell'immagine sono stati prodotti |
 <!-- assets:end -->
 
+Il rapporto `trivy-fs` allegato alla 2026.5 è vuoto: a quel tag il repository non aveva
+un lockfile, e Trivy non ha trovato nessun file da analizzare. Un rapporto vuoto non
+indica l'assenza di vulnerabilità, e in quel caso la nota `EVIDENCE` lo dice. Il ramo
+`main` contiene ora `uv.lock`, che Trivy analizza: provato il 2026-10-11 con la stessa
+versione usata dal workflow, la 0.70.0.
+
 ## 7. E se il fornitore sparisce
 
 Il codice sorgente è pubblico su <https://github.com/maksimtech/releaseradar> con

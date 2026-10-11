@@ -430,13 +430,41 @@ def test_the_weekly_rebuild_leaves_the_version_tags_alone(doc):
     assert "non sovrascrivono" in prose(doc)
 
 
-def test_the_evidence_note_gives_the_digest_and_not_the_tag_twice():
+def step(evidence: dict, name: str) -> str:
+    job = next(iter(evidence["jobs"].values()))
+    return next(s["run"] for s in job["steps"] if s.get("name") == name)
+
+
+def test_the_evidence_note_gives_the_digest_and_not_the_tag_twice(evidence):
     """Syft puts the tag in metadata.component.version, and mailradar's first
     EVIDENCE note, on v2026.44, read "digest v2026.44". The digest a customer pins
     comes from Docker Hub, which gives the index digest and one per platform."""
-    evidence = EVIDENCE.read_text(encoding="utf-8")
-    assert '["metadata"]["component"]' not in evidence
-    assert "https://hub.docker.com/v2/repositories/${IMAGE}/tags/${TAG}" in evidence
+    describe = step(evidence, "Describe the evidence")
+    assert "sbom-image" not in describe.split("cat >")[0], "the note reads the image SBOM before writing"
+    assert '["metadata"]["component"]' not in describe
+    assert "https://hub.docker.com/v2/repositories/${IMAGE}/tags/${TAG}" in describe
+
+
+def test_the_source_sbom_says_which_version_it_describes(evidence):
+    """The version is dynamic in pyproject.toml, so cyclonedx-py names the main
+    component and leaves its version out: the first sbom-source attached to
+    v2026.5, on 2026-10-11, said "releaseradar" and no version. The workflow
+    writes the version of the package it installed, and refuses a tag that
+    disagrees with it."""
+    sbom = step(evidence, "SBOM of the Python environment")
+    assert "importlib.metadata" in sbom and "releaseradar" in sbom
+    assert '!= "$VERSION"' in sbom or "!= \"${VERSION}\"" in sbom
+    assert '["version"] =' in sbom
+
+
+def test_an_empty_repository_scan_is_not_presented_as_a_clean_one(evidence, doc):
+    """The trivy-fs report attached to v2026.5 has no Results at all: that tag
+    has no lockfile, so Trivy found nothing it could analyse. An empty report
+    reads as "no vulnerabilities" to whoever opens it; the note says what it is."""
+    describe = step(evidence, "Describe the evidence")
+    assert "Results" in describe
+    assert "found no file it could analyse" in describe
+    assert "non indica l'assenza di vulnerabilità" in prose(doc)
 
 
 def test_the_source_sbom_names_the_package_and_the_extra_the_image_ships():
