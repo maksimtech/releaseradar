@@ -133,14 +133,16 @@ def test_every_host_the_code_contacts_is_declared_and_no_other(doc):
 
 
 def test_the_host_rule_looks_at_something():
-    """A rule that found no host would pass for the wrong reason."""
-    assert "api.github.com" in hosts_in_code()
+    """A rule that found no host would pass for the wrong reason. Compared as a
+    whole list: CodeQL reads `"<host>" in ...` as a URL substring check
+    (py/incomplete-url-substring-sanitization), and flagged it on PR #11."""
+    assert sorted(hosts_in_code()) == ["api.github.com"]
 
 
 def test_the_listening_address_is_not_taken_for_a_host():
     """web.py names 127.0.0.1 in its docstring and in LOOPBACK: that is where
     the dashboard listens, not a host it contacts."""
-    assert "127.0.0.1" not in hosts_in_code()
+    assert hosts_in_code().get("127.0.0.1") is None
 
 
 def command_names(path: Path) -> dict[str, ast.AST]:
@@ -534,6 +536,18 @@ def test_every_scanner_named_has_its_workflow_and_none_is_left_out(doc):
         assert (WORKFLOWS / f"{SCANNERS[name]}.yml").is_file(), f"{name} has no workflow"
     present = {n for n, w in SCANNERS.items() if (WORKFLOWS / f"{w}.yml").is_file()}
     assert present <= named, f"workflows the document does not name: {sorted(present - named)}"
+
+
+def test_the_posture_gate_is_described_as_reading_main(doc):
+    """Security Posture lists the open alerts without a `ref`, and GitHub then
+    answers for the default branch: on a pull request it checks main's alerts,
+    not the ones the pull request adds. On PR #11, on 2026-10-11, it passed, and
+    CodeQL then reported a new high alert on the PR's merge ref."""
+    posture = (WORKFLOWS / "security-posture.yml").read_text(encoding="utf-8")
+    call = next(line for line in posture.splitlines() if "code-scanning/alerts?state=open" in line)
+    assert "ref=" not in call
+    assert "avvisi aperti sul ramo `main`" in prose(doc)
+    assert "open alerts on `main`" in prose(SECURITY.read_text(encoding="utf-8"))
 
 
 def test_security_md_answers_the_fourth_question():

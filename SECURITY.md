@@ -37,10 +37,11 @@ The details, host by host and table by table, are in
 - **Docker Scout** checks the image on every push to `main`, on every image build
   and weekly. The image is built on `python:3.12-slim-trixie` (Debian Trixie), and
   `latest` is scheduled to be rebuilt weekly to pick up Debian's security patches.
-- **Security Posture** reads the alerts all of the above publish to GitHub code
-  scanning and fails when a high or critical finding has no reasoned exception in
-  `SECURITY-EXCEPTIONS.toml`. It also runs weekly, because an exception expires by
-  date and not by commit.
+- **Security Posture** reads the open alerts on `main` that all of the above
+  publish to GitHub code scanning, and fails when a high or critical finding has no
+  reasoned exception in `SECURITY-EXCEPTIONS.toml`. It also runs weekly, because an
+  exception expires by date and not by commit. On a pull request it reads `main`'s
+  alerts, not the ones the pull request adds.
 - Reports sent to the address above.
 
 ## Response times
