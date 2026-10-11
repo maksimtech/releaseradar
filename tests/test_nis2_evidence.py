@@ -457,6 +457,18 @@ def test_the_source_sbom_says_which_version_it_describes(evidence):
     assert '["version"] =' in sbom
 
 
+def test_the_source_sbom_leaves_out_what_the_image_removes(evidence):
+    """The Dockerfile uninstalls pip, and the sbom-source attached to v2026.5 on
+    2026-10-11 still listed pip 25.0.1: the venv's own copy, which the image does
+    not ship. The environment described drops it the same way."""
+    assert "pip uninstall pip -y" in DOCKERFILE.read_text(encoding="utf-8")
+    sbom = step(evidence, "SBOM of the Python environment")
+    install = sbom.index('pip install --quiet ".[mcp]"')
+    uninstall = sbom.index("/tmp/product/bin/python -m pip uninstall --yes --quiet pip")
+    describe = sbom.index("cyclonedx-py environment")
+    assert install < uninstall < describe
+
+
 def test_an_empty_repository_scan_is_not_presented_as_a_clean_one(evidence, doc):
     """The trivy-fs report attached to v2026.5 has no Results at all: that tag
     has no lockfile, so Trivy found nothing it could analyse. An empty report

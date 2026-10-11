@@ -89,6 +89,9 @@ jobs:
         run: |
           python -m venv /tmp/product
           /tmp/product/bin/pip install --quiet ".[mcp]"
+          # The Dockerfile removes pip from the image; the venv's own copy is not
+          # part of what ships, and the first sbom-source of v2026.5 listed it.
+          /tmp/product/bin/python -m pip uninstall --yes --quiet pip
           python -m venv /tmp/cyclonedx
           /tmp/cyclonedx/bin/pip install --quiet "cyclonedx-bom==7.4.0"
           # --pyproject names the product as the SBOM's main component; without
