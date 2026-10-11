@@ -7,6 +7,42 @@ the year is the generation shared by the five Radar and the count is this one's 
 
 ## [Unreleased]
 
+### Added
+- **`docs/nis2-compliance.md`: the answers to the seven questions a customer subject
+  to NIS2 asks a software supplier, with only what the repository can back.** Written
+  in Italian, for customers under d.lgs. 138/2024, after the same document in
+  mailradar and exeradar. Where the answer is "no" it says no: no penetration test,
+  no second reviewer, no access control, no audit log, no export command. It says
+  what ReleaseRadar sends to its one host, api.github.com (the `owner/repo` names and
+  the `GITHUB_TOKEN`, in the `Authorization` header), which commands contact it and
+  which only touch the database, what the five tables of the SQLite database hold,
+  that the dashboard listens on 127.0.0.1 with no login and checks neither `Host` nor
+  `Origin`, and that the MCP server speaks stdio to whoever started it.
+  `tests/test_nis2_evidence.py` holds each of those to the code — a sync with a token,
+  replayed from recordings, leaves the token out of the database — and refuses
+  "NIS2-ready", "no data sent to third parties" and similar claims in the document,
+  in `SECURITY.md` and in the README.
+- **Every release carries SBOMs and dated scans** (`.github/workflows/sbom.yml`):
+  CycloneDX 1.5 of the image, Debian packages included (Syft), and of the Python
+  environment with the `[mcp]` extra the image installs (cyclonedx-py), plus Trivy
+  reports of the image and of the repository at the tag, and a note giving the commit
+  and Docker Hub's digests and saying that a CVE scan is not a penetration test. It
+  runs after the image of the tag has been pushed, and on demand for a release that
+  is already out.
+- **`uv.lock`**, which ReleaseRadar did not have, and a Quality step that fails when
+  it falls behind `pyproject.toml`.
+- **`SECURITY.md` says how vulnerabilities are found, how fast they are answered, how
+  customers are told and how to roll back.** A fix ships with the next release; for
+  CVSS 9.0 or more, customers who gave a security contact hear within 48 hours.
+
+### Fixed
+- **The licence gate had never refused anything.** `pip-licenses
+  --fail-on="GPL;AGPL;LGPL"` compares whole licence strings, and no package declares
+  just "GPL": measured in mailradar on 2026-10-11, exit 0 without `--partial-match`
+  and exit 1 with it, with an LGPL package installed. The flag is there now;
+  ReleaseRadar's base install passes it, and so did an install with the `[mcp]`
+  extra, checked by hand the same day.
+
 
 ## [2026.5] - 2026-10-10
 

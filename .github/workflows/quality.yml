@@ -31,3 +31,11 @@ jobs:
         run: ruff check releaseradar tests tools
       - name: Type check (mypy)
         run: mypy releaseradar
+      # docs/nis2-compliance.md shows uv.lock to a customer as the full list of
+      # dependencies. ReleaseRadar had none until 2026-10-11; the check came with
+      # it, so that it cannot fall behind pyproject.toml unnoticed. The uv pinned
+      # here is the one that wrote the file.
+      - name: Lockfile matches pyproject.toml (uv)
+        run: |
+          python -m pip install "uv==0.12.18"
+          uv lock --check

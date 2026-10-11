@@ -1,22 +1,84 @@
 # Security Policy
 
-## Reporting Vulnerabilities
+## Reporting a vulnerability
 
-Please report security issues to security@maksimtech.com (GPG key on keys.openpgp.org).
+Write to <security@maksimtech.com>; the GPG key for that address is on
+keys.openpgp.org. Please do not open a public issue for a vulnerability.
+
+ReleaseRadar has a single maintainer, Massimo Moretti, who reads that address.
+
+## Supported versions
+
+Only the latest release receives fixes. Versions follow CalVer (`YYYY.count[.fix]`):
+a fix ships as the next release, never as a patch to an older one.
 
 ## What this tool touches
 
-ReleaseRadar reads the GitHub REST API and writes a local SQLite file. It sends
-nothing anywhere else. A `GITHUB_TOKEN`, when given, travels only to
-api.github.com in the `Authorization` header and is never written to the
-database or the logs. The MCP server speaks over stdio to the client that
-started it and opens no port.
+- **Network:** api.github.com only. A `GITHUB_TOKEN`, when given, travels in the
+  `Authorization` header of those requests; it is not written to the database.
+- **Disk:** one SQLite file, `~/.releaseradar/state.db` or the path in
+  `RELEASERADAR_DB`, unencrypted, holding the tracked repositories and what was seen
+  on them.
+- **The dashboard** (`releaseradar web`) listens on 127.0.0.1 only, over plain HTTP,
+  with no login: anyone on the same machine who can reach the port can read it and
+  ask for a sync.
+- **The MCP server** speaks over stdio to the client that started it and opens no
+  port.
 
-## Known Open CVEs
+The details, host by host and table by table, are in
+[docs/nis2-compliance.md](docs/nis2-compliance.md).
 
-`SECURITY-EXCEPTIONS.toml` is the record: every open high or critical finding
-that is accepted for now, with the reason and the date it will be looked at
-again. `.github/workflows/security-posture.yml` fails the build when a finding
-is open and not in that file, and when an entry is past its date.
+## How vulnerabilities are found
 
-Last reviewed: 2026-10-10
+- **CodeQL, Bandit and Trivy** (repository files) run on every pull request, on
+  every push to `main` and weekly.
+- **Snyk** checks the dependencies of the base install, the code and the image on
+  every pull request and push to `main`.
+- **Docker Scout** checks the image on every push to `main`, on every image build
+  and weekly. The image is built on `python:3.12-slim-trixie` (Debian Trixie), and
+  `latest` is scheduled to be rebuilt weekly to pick up Debian's security patches.
+- **Security Posture** reads the open alerts on `main` that all of the above
+  publish to GitHub code scanning, and fails when a high or critical finding has no
+  reasoned exception in `SECURITY-EXCEPTIONS.toml`. It also runs weekly, because an
+  exception expires by date and not by commit. On a pull request it reads `main`'s
+  alerts, not the ones the pull request adds.
+- Reports sent to the address above.
+
+## Response times
+
+- A fix ships with the next release. Releases can be up to a month apart.
+- For a vulnerability with a CVSS score of 9.0 or more, customers who have given a
+  security contact are told within 48 hours of the report being taken in charge,
+  even if the fix is not ready yet.
+- A vulnerability that is accepted rather than fixed is recorded in
+  `SECURITY-EXCEPTIONS.toml` with the reason and a review date; Security Posture
+  fails once the review date has passed.
+
+## Customer notification
+
+Every fix is described in the release notes on GitHub, which are the CHANGELOG
+section of that version. For a vulnerability with a CVSS score of 9.0 or more,
+customers who have given a security contact also get a direct email.
+
+## Rollback
+
+Every version stays installable and pinnable:
+
+- PyPI: `pip install releaseradar==<version>`;
+- Docker Hub: `maksimtech/releaseradar:v<version>`, a tag the weekly rebuild of
+  `latest` does not overwrite, and the SHA256 digest of that image, which cannot
+  change.
+
+Rolling back means pinning the previous version or digest. Releases are cut with
+`release.sh`.
+
+## Evidence attached to every release
+
+Every GitHub release from 2026.5 on carries CycloneDX SBOMs of the image and of the Python
+environment, and dated Trivy reports of the image and of the repository at the
+tag. The Trivy reports are an automated scan for known vulnerabilities, not a
+penetration test; no penetration test has been carried out. What these files are,
+and the answers to the questions a customer subject to NIS2 may ask, are in
+[docs/nis2-compliance.md](docs/nis2-compliance.md).
+
+Last reviewed: 2026-10-11
