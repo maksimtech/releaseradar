@@ -1,0 +1,41 @@
+name: CodSpeed
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'releaseradar/**'
+      - 'tests/**'
+      - 'pyproject.toml'
+      - '.github/workflows/codspeed.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  # CodSpeed authenticates the upload with the job's OIDC token: no secret.
+  id-token: write
+jobs:
+  benchmarks:
+    name: Run benchmarks
+    # Pinned to 24.04 like the other Radar, not ubuntu-26.04 like the rest of
+    # this repository's jobs: CodSpeedHQ/action v5 refuses 26.04 with
+    # `Unsupported system`. Worth trying 26.04 on a branch now and then.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        # pytest-codspeed is installed here and nowhere else: the suite must not
+        # need a benchmark runner to check correctness (WORKFLOW_ONLY in
+        # tests/test_declared_imports.py). Without it the benchmarks skip.
+        run: |
+          pip install -e ".[dev]"  # NOSONAR - trusted internal project, no external setup scripts
+          pip install pytest-codspeed --only-binary :all:
+      - name: Run benchmarks
+        uses: CodSpeedHQ/action@f842b9a3ffe213dbb81768fd7f7eeb4dfcf1c369 # v5.4.2
+        with:
+          mode: simulation
+          run: pytest tests/benchmarks/ --codspeed

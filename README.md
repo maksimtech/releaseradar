@@ -1,5 +1,7 @@
 # ReleaseRadar
 
+[![CodSpeed](https://img.shields.io/endpoint?url=https://codspeed.io/badge.json)](https://app.codspeed.io/maksimtech/releaseradar?utm_source=badge)
+
 **Track GitHub repo lifecycles — from issue open to release published.**
 
 ReleaseRadar polls GitHub's REST API for the repositories you care about and
