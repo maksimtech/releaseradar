@@ -43,6 +43,13 @@ the year is the generation shared by the five Radar and the count is this one's 
   ReleaseRadar's base install passes it, and so did an install with the `[mcp]`
   extra, checked by hand the same day.
 
+### Fixed
+
+- **The Saturday mutation run would have died on the NIS2 tests.** mutmut copies only the
+  paths in `also_copy` into `mutants/`, and `tests/test_nis2_evidence.py` reads `docs/`, which
+  was not among them. Listed now, with a test that reads, from its own source, every root
+  path those tests use and checks that mutmut copies it.
+
 
 ## [2026.5] - 2026-10-10
 
