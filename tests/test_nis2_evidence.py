@@ -548,16 +548,16 @@ def test_every_scanner_named_has_its_workflow_and_none_is_left_out(doc):
     assert present <= named, f"workflows the document does not name: {sorted(present - named)}"
 
 
-def test_the_posture_gate_is_described_as_reading_main(doc):
-    """Security Posture lists the open alerts without a `ref`, and GitHub then
-    answers for the default branch: on a pull request it checks main's alerts,
-    not the ones the pull request adds. On PR #11, on 2026-10-11, it passed, and
-    CodeQL then reported a new high alert on the PR's merge ref."""
+def test_the_posture_gate_is_described_as_reading_the_ref_under_review(doc):
+    """Until 2026-10-11 Security Posture listed the open alerts without a `ref`,
+    so on a pull request it checked main's alerts: on PR #11 it passed, and CodeQL
+    then reported a new high alert on the PR's merge ref. It now reads the ref it
+    runs on, and the documents say so, with what a pull request ref holds."""
     posture = (WORKFLOWS / "security-posture.yml").read_text(encoding="utf-8")
     call = next(line for line in posture.splitlines() if "code-scanning/alerts?state=open" in line)
-    assert "ref=" not in call
-    assert "avvisi aperti sul ramo `main`" in prose(doc)
-    assert "open alerts on `main`" in prose(SECURITY.read_text(encoding="utf-8"))
+    assert "ref=${ALERT_REF}" in call
+    assert "gli avvisi aperti del ramo che controlla" in prose(doc)
+    assert "the open alerts of the ref it runs on" in prose(SECURITY.read_text(encoding="utf-8"))
 
 
 def test_security_md_answers_the_fourth_question():

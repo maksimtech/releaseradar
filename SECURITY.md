@@ -37,11 +37,13 @@ The details, host by host and table by table, are in
 - **Docker Scout** checks the image on every push to `main`, on every image build
   and weekly. The image is built on `python:3.12-slim-trixie` (Debian Trixie), and
   `latest` is scheduled to be rebuilt weekly to pick up Debian's security patches.
-- **Security Posture** reads the open alerts on `main` that all of the above
-  publish to GitHub code scanning, and fails when a high or critical finding has no
-  reasoned exception in `SECURITY-EXCEPTIONS.toml`. It also runs weekly, because an
-  exception expires by date and not by commit. On a pull request it reads `main`'s
-  alerts, not the ones the pull request adds.
+- **Security Posture** reads the open alerts of the ref it runs on that all of the
+  above publish to GitHub code scanning, after waiting for that commit's analyses,
+  and fails when a high or critical finding has no reasoned exception in
+  `SECURITY-EXCEPTIONS.toml`. It also runs weekly, because an exception expires by
+  date and not by commit. On a pull request that ref is the pull request's own (until
+  2026-10-11 it was `main`'s): CodeQL reports there only what the change introduces,
+  and Docker Scout does not run, so the image is checked on `main`.
 - Reports sent to the address above.
 
 ## Response times

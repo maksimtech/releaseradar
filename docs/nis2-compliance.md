@@ -170,7 +170,7 @@ Analisi automatiche, ciascuna con il proprio workflow in `.github/workflows`:
 | `Snyk` | vulnerabilità note nelle dipendenze dell'installazione base e nell'immagine; analisi statica del codice | ogni pull request, ogni push su `main` |
 | `SonarCloud` | qualità, duplicazioni e copertura | ogni pull request, ogni push su `main` |
 | `Docker Scout` | vulnerabilità note nell'immagine | ogni push su `main`, ogni build dell'immagine, ogni settimana |
-| `Security Posture` | raccoglie gli avvisi aperti sul ramo `main` pubblicati dagli altri e fallisce se un avviso alto o critico non ha un'eccezione motivata | ogni pull request, ogni push su `main`, ogni settimana |
+| `Security Posture` | raccoglie gli avvisi aperti del ramo che controlla, pubblicati dagli altri, e fallisce se un avviso alto o critico non ha un'eccezione motivata | ogni pull request, ogni push su `main`, ogni settimana |
 | `mutmut` | mutation testing: verifica che i test si accorgano delle modifiche al codice | ogni settimana |
 <!-- scanners:end -->
 
@@ -178,9 +178,11 @@ Snyk e SonarCloud saltano l'analisi sulle pull request che non ricevono i segret
 repository (da fork o da Dependabot) e lo segnalano nel log. Security Posture, se le
 analisi dello stesso commit non finiscono entro venti minuti o se non può leggere gli
 avvisi (per esempio su una pull request da fork), non controlla nulla e lo segnala nel
-log invece di fallire; e su una pull request controlla gli avvisi di `main`, non quelli
-che la pull request aggiunge, che GitHub mostra nei controlli di code scanning della
-pull request. A questi si aggiungono i test automatici (pytest, con copertura inviata a
+log invece di fallire. Su una pull request legge gli avvisi del ramo della pull request
+(fino al 2026-10-11 leggeva quelli di `main`), dopo aver atteso le analisi di quel
+commit: lì CodeQL riporta solo quello che la modifica introduce, e Docker Scout non
+gira, quindi le vulnerabilità dell'immagine sono controllate su `main` e non sulla pull
+request. A questi si aggiungono i test automatici (pytest, con copertura inviata a
 Codecov), ruff e mypy nel workflow Quality.
 
 Le regole del ramo `main`, lette dalle impostazioni del repository il 2026-10-11,

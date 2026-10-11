@@ -45,6 +45,13 @@ the year is the generation shared by the five Radar and the count is this one's 
 
 ### Fixed
 
+- **Security Posture judged every pull request by main's alerts.** It listed the alerts without
+  a `ref`, so GitHub answered for main, and its wait compared the scanners' runs with the merge
+  commit, which none of them carries: on mailradar #39 it waited two seconds. It now waits for
+  the runs of the branch head, Bandit included, and reads the open alerts of `refs/pull/N/merge`;
+  the closed ones come from that ref and from main, so an exception main holds as settled is not
+  called unused on a ref with no history. Checked against a recent pull request of each Radar
+  with the real tool: the same verdict as main in all six.
 - **The Saturday mutation run would have died on the NIS2 tests.** mutmut copies only the
   paths in `also_copy` into `mutants/`, and `tests/test_nis2_evidence.py` reads `docs/`, which
   was not among them. Listed now, with a test that reads, from its own source, every root
