@@ -652,3 +652,19 @@ def test_httpx_is_what_the_document_says_reaches_github():
                 imported.add(node.module.split(".")[0])
     assert {"requests", "urllib3", "aiohttp", "socket"}.isdisjoint(imported)
     assert "httpx" in imported
+
+
+def test_the_mutation_run_copies_what_these_tests_read():
+    """mutmut copies the package and tests/ into mutants/ and runs the suite from
+    there, adding only `also_copy` and a few files of its own accord: a test that
+    reads a file left behind dies in the stats phase, before a single mutant is
+    tried. These tests read docs/, which was not copied (found on apkradar).
+    The paths are read from this file, so a new one cannot be forgotten."""
+    import tomllib
+
+    mutmut = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["tool"]["mutmut"]
+    copied = set(mutmut.get("also_copy", [])) | {"tests", "test", "setup.cfg", "pyproject.toml", "uv.lock"}
+    copied |= {path.split("/")[0] for path in mutmut.get("source_paths", [])}
+    read = set(re.findall(r'ROOT / "([\w.-]+)', Path(__file__).read_text(encoding="utf-8")))
+    assert "docs" in read, "the rule found none of the paths these tests read"
+    assert read <= copied, f"read by these tests but not copied by mutmut: {sorted(read - copied)}"
