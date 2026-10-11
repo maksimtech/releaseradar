@@ -24,10 +24,10 @@ web locale (`releaseradar web`) e come server MCP (`releaseradar mcp`).
   Docker installa sempre. La risoluzione completa, dipendenze di sviluppo comprese, è
   in `uv.lock`. La CI (workflow Quality) fallisce se `uv.lock` non corrisponde più a
   `pyproject.toml`.
-- Ogni release su GitHub porta in allegato due SBOM in formato CycloneDX 1.5: quella
-  dell'immagine Docker, pacchetti di sistema inclusi, e quella dell'ambiente Python
-  del pacchetto installato da sorgente con l'extra `[mcp]`, come nell'immagine (vedi
-  la tabella al punto 6). L'ambiente Python è risolto il giorno in cui la SBOM viene
+- Ogni release dalla 2026.5 in poi porta in allegato, su GitHub, due SBOM in formato
+  CycloneDX 1.5: quella dell'immagine Docker, pacchetti di sistema inclusi, e quella
+  dell'ambiente Python del pacchetto installato da sorgente con l'extra `[mcp]`, come
+  nell'immagine (vedi la tabella al punto 6). L'ambiente Python è risolto il giorno in cui la SBOM viene
   prodotta, quindi le versioni possono differire da quelle dell'immagine, che ha la
   propria SBOM. La release 2026.5 ha ricevuto questi allegati il 2026-10-11, dopo la
   pubblicazione; le release dalla 2026.1 alla 2026.4 non li hanno.
@@ -179,17 +179,17 @@ repository (da fork o da Dependabot) e lo segnalano nel log. Security Posture, s
 analisi dello stesso commit non finiscono entro venti minuti o se non può leggere gli
 avvisi (per esempio su una pull request da fork), non controlla nulla e lo segnala nel
 log invece di fallire; e su una pull request controlla gli avvisi di `main`, non quelli
-che la pull request aggiunge, che GitHub mostra nel controllo di CodeQL. A questi si
-aggiungono i
-test automatici (pytest, con copertura inviata a Codecov), ruff e mypy nel workflow
-Quality.
+che la pull request aggiunge, che GitHub mostra nei controlli di code scanning della
+pull request. A questi si aggiungono i test automatici (pytest, con copertura inviata a
+Codecov), ruff e mypy nel workflow Quality.
 
 Le regole del ramo `main`, lette dalle impostazioni del repository il 2026-10-11,
 vietano la cancellazione e la riscrittura della storia, richiedono una storia lineare,
 una pull request con zero approvazioni richieste e due controlli superati: Tests e
 Quality. L'account del manutentore (`maksimtech`) può scavalcare queste regole in
 qualunque momento, e lo fa a ogni release: `release.sh` invia direttamente su `main`,
-senza pull request, il commit che aggiorna il numero di versione. Security Posture e
+senza pull request, il commit che aggiorna il numero di versione, ed è così che sono
+arrivati su `main` quelli dalla 2026.2 alla 2026.5. Security Posture e
 CodeQL girano su ogni pull request ma non sono tra i controlli obbligatori.
 
 Sul repository, alla stessa data, sono attivi la secret scanning di GitHub e la push
@@ -206,8 +206,8 @@ delle vulnerabilità note, descritta al punto 5, ma non è un penetration test: 
 ambito concordato, non è condotta da un tester indipendente e non produce un rapporto
 con vulnerabilità trovate e correzioni datate.
 
-Ogni release porta in allegato i risultati datati di quella scansione, insieme alle
-SBOM:
+Ogni release dalla 2026.5 in poi porta in allegato i risultati datati di quella
+scansione, insieme alle SBOM:
 
 <!-- assets:start -->
 | File allegato alla release | Contenuto |
@@ -221,15 +221,17 @@ SBOM:
 
 Il rapporto `trivy-fs` allegato alla 2026.5 è vuoto: a quel tag il repository non aveva
 un lockfile, e Trivy non ha trovato nessun file da analizzare. Un rapporto vuoto non
-indica l'assenza di vulnerabilità, e in quel caso la nota `EVIDENCE` lo dice. Il ramo
-`main` contiene ora `uv.lock`, che Trivy analizza: provato il 2026-10-11 con la stessa
-versione usata dal workflow, la 0.70.0.
+indica l'assenza di vulnerabilità, e in quel caso la nota `EVIDENCE` lo dice. Da questa
+revisione il repository contiene `uv.lock`, che Trivy analizza: provato il 2026-10-11
+con la stessa versione usata dal workflow, la 0.70.0.
 
 ## 7. E se il fornitore sparisce
 
 Il codice sorgente è pubblico su <https://github.com/maksimtech/releaseradar> con
-licenza MIT, e resta accessibile indipendentemente dalle sorti commerciali del
-fornitore. Le versioni pubblicate restano su PyPI e su Docker Hub.
+licenza MIT: il cliente può conservarne una copia e, per la licenza, usarla, modificarla
+e farla mantenere da altri senza chiedere nulla al fornitore. Le versioni pubblicate
+sono su PyPI e su Docker Hub, da cui il cliente può scaricarle e conservarle; quanto
+restano disponibili lì dipende da quei servizi, non da questo documento.
 
 I dati di ReleaseRadar stanno sull'infrastruttura di chi lo esegue, mai presso il
 fornitore: sono il database descritto al punto 3. Non c'è un comando di esportazione

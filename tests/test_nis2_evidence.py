@@ -508,6 +508,16 @@ def test_the_release_carries_the_files_the_document_promises(doc):
     assert "gh release upload" in workflow
 
 
+def test_the_releases_without_evidence_are_not_said_to_have_it(doc):
+    """sbom.yml came after 2026.5 and was dispatched for 2026.5 alone: 2026.1 to
+    2026.4 carry no SBOM. "Every release" would be false of four of the five."""
+    text = prose(doc)
+    assert "Ogni release su GitHub porta" not in text
+    assert "Ogni release dalla 2026.5 in poi porta" in text
+    for path in (SECURITY, README):
+        assert "from 2026.5 on" in path.read_text(encoding="utf-8")
+
+
 def test_the_scan_is_not_presented_as_a_penetration_test(doc):
     """Question 6 asks for a penetration test. There has been none, and a scan of
     known CVEs is not one: the release note that travels with the files says so."""
