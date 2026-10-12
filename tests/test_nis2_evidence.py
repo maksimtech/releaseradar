@@ -668,3 +668,16 @@ def test_the_mutation_run_copies_what_these_tests_read():
     read = set(re.findall(r'ROOT / "([\w.-]+)', Path(__file__).read_text(encoding="utf-8")))
     assert "docs" in read, "the rule found none of the paths these tests read"
     assert read <= copied, f"read by these tests but not copied by mutmut: {sorted(read - copied)}"
+
+
+def test_the_branch_rules_are_described_without_an_exception(doc):
+    """On 2026-10-12 the ruleset on main lost the owner's bypass and requires a pull
+    request for every change, the version bump included (release.sh opens one). The
+    document says so with the date it was read, and keeps the earlier state as past."""
+    text = prose(doc)
+    assert "lette dalle impostazioni del repository il 2026-10-12" in text
+    assert "Non prevedono eccezioni, nemmeno per l'account del manutentore" in text
+    for stale in ("è configurato per poter scavalcare", "può scavalcare queste regole",
+                  "può scavalcare le regole", "vanno direttamente su `main`",
+                  "Non c'è una regola che imponga la pull request"):
+        assert stale not in text, stale
