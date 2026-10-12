@@ -185,14 +185,16 @@ gira, quindi le vulnerabilità dell'immagine sono controllate su `main` e non su
 request. A questi si aggiungono i test automatici (pytest, con copertura inviata a
 Codecov), ruff e mypy nel workflow Quality.
 
-Le regole del ramo `main`, lette dalle impostazioni del repository il 2026-10-11,
+Le regole del ramo `main`, lette dalle impostazioni del repository il 2026-10-12,
 vietano la cancellazione e la riscrittura della storia, richiedono una storia lineare,
 una pull request con zero approvazioni richieste e due controlli superati: Tests e
-Quality. L'account del manutentore (`maksimtech`) può scavalcare queste regole in
-qualunque momento, e lo fa a ogni release: `release.sh` invia direttamente su `main`,
-senza pull request, il commit che aggiorna il numero di versione, ed è così che sono
-arrivati su `main` quelli dalla 2026.2 alla 2026.5. Security Posture e
-CodeQL girano su ogni pull request ma non sono tra i controlli obbligatori.
+Quality. Non prevedono eccezioni, nemmeno per l'account del manutentore: anche il
+commit che aggiorna il numero di versione arriva su `main` attraverso una pull
+request. Fino a quel giorno l'account del manutentore (`maksimtech`) poteva
+scavalcarle, e lo faceva a ogni release: `release.sh` inviava direttamente su `main`
+il commit che aggiorna il numero di versione, ed è così che sono arrivati su `main`
+quelli dalla 2026.2 alla 2026.5. Security Posture e CodeQL girano su ogni pull request
+ma non sono tra i controlli obbligatori.
 
 Sul repository, alla stessa data, sono attivi la secret scanning di GitHub e la push
 protection; gli avvisi Dependabot sono disattivati.
