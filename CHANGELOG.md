@@ -63,6 +63,15 @@ the year is the generation shared by the five Radar and the count is this one's 
   was not among them. Listed now, with a test that reads, from its own source, every root
   path those tests use and checks that mutmut copies it.
 
+### Changed
+
+- **`release.sh` goes through a pull request.** main now takes pull requests only, the owner
+  included, after a cloud session pushed straight to it with the owner's account. The script
+  commits the bump on `release/vX` and pushes that branch only; with `gh` and a GitHub origin it
+  opens the pull request with auto-merge, waits for the merge and tags the merge commit.
+  `./release.sh --tag X` is that last step alone. The guarantees stay: nothing is committed when
+  the suite fails, and the tag is made before anything is pushed. Ported from mailradar.
+
 
 ## [2026.5] - 2026-10-10
 
