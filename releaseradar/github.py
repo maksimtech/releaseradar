@@ -90,17 +90,17 @@ def _follow(client: httpx.Client, url: str, subject: str, params: dict | None = 
     token is for api.github.com, so a redirect anywhere else is refused unsent.
     """
     resp = client.get(url, params=params)
-    for _ in range(_MAX_REDIRECTS):
-        if resp.status_code not in _REDIRECTS:
-            return resp
+    hops = 0
+    while resp.status_code in _REDIRECTS:
+        if hops == _MAX_REDIRECTS:
+            raise GitHubError(f"GitHub answered {subject} with too many redirects.", resp.status_code)
         target = resp.url.join(resp.headers.get("location", ""))
         if target.scheme != "https" or target.host != "api.github.com":
             raise GitHubError(
                 f"GitHub redirected {subject} to {target.scheme}://{target.host}: not followed, "
                 "the token goes to https://api.github.com only.", resp.status_code)
         resp = client.get(target)
-    if resp.status_code in _REDIRECTS:
-        raise GitHubError(f"GitHub answered {subject} with too many redirects.", resp.status_code)
+        hops += 1
     return resp
 
 

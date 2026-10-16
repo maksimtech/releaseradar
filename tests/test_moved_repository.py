@@ -119,6 +119,13 @@ def test_a_repository_redirected_off_github_is_not_reported_as_existing(github):
         gh.repo_exists("joyent", "node")
 
 
+def test_the_size_of_a_repository_redirected_off_github_is_unknown(github):
+    """open_items answers None for what GitHub will not describe, and a refused
+    redirect is one of those: the sync itself then says why."""
+    github.get(OLD).mock(return_value=moved_to("https://example.com/repositories/211666"))
+    assert gh.open_items("joyent", "node") is None
+
+
 def test_a_redirect_that_never_ends_is_given_up(github):
     github.get(f"{OLD}/releases").mock(return_value=moved_to(f"{OLD}/releases"))
     with pytest.raises(gh.GitHubError, match="too many redirects"):
