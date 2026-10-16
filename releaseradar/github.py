@@ -77,9 +77,36 @@ def _explain(resp: httpx.Response, subject: str) -> GitHubError:
     return GitHubError(f"GitHub answered {status} for {subject}" + (f": {detail}" if detail else "."), status)
 
 
+_REDIRECTS = (301, 302, 307, 308)
+_MAX_REDIRECTS = 5
+
+
+def _follow(client: httpx.Client, url: str, subject: str, params: dict | None = None) -> httpx.Response:
+    """GET, following GitHub's redirects within https://api.github.com and nowhere else.
+
+    A transferred or renamed repository answers its old name with 301 to
+    /repositories/<id>/..., and the body says to follow it. Read unfollowed, that
+    body was walked as a page of issues. The client itself follows nothing: the
+    token is for api.github.com, so a redirect anywhere else is refused unsent.
+    """
+    resp = client.get(url, params=params)
+    for _ in range(_MAX_REDIRECTS):
+        if resp.status_code not in _REDIRECTS:
+            return resp
+        target = resp.url.join(resp.headers.get("location", ""))
+        if target.scheme != "https" or target.host != "api.github.com":
+            raise GitHubError(
+                f"GitHub redirected {subject} to {target.scheme}://{target.host}: not followed, "
+                "the token goes to https://api.github.com only.", resp.status_code)
+        resp = client.get(target)
+    if resp.status_code in _REDIRECTS:
+        raise GitHubError(f"GitHub answered {subject} with too many redirects.", resp.status_code)
+    return resp
+
+
 def _get(client: httpx.Client, url: str, subject: str, params: dict | None = None) -> httpx.Response:
     try:
-        resp = client.get(url, params=params)
+        resp = _follow(client, url, subject, params)
     except httpx.HTTPError as exc:
         raise GitHubError(f"cannot reach api.github.com: {exc}") from exc
     if resp.status_code >= 400:
@@ -187,8 +214,8 @@ def open_items(owner: str, repo: str, token: str | None = None) -> int | None:
     GitHub will not describe (the sync itself will say why)."""
     with _client(token) as c:
         try:
-            resp = c.get(f"{_BASE}/repos/{owner}/{repo}")
-        except httpx.HTTPError:
+            resp = _follow(c, f"{_BASE}/repos/{owner}/{repo}", f"{owner}/{repo}")
+        except (httpx.HTTPError, GitHubError):
             return None
     if resp.status_code != 200:
         return None
@@ -204,7 +231,7 @@ def repo_exists(owner: str, repo: str, token: str | None = None) -> bool:
     """
     with _client(token) as c:
         try:
-            resp = c.get(f"{_BASE}/repos/{owner}/{repo}")
+            resp = _follow(c, f"{_BASE}/repos/{owner}/{repo}", f"{owner}/{repo}")
         except httpx.HTTPError as exc:
             raise GitHubError(f"cannot reach api.github.com: {exc}") from exc
     if resp.status_code == 200:

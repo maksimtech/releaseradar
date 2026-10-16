@@ -206,6 +206,7 @@ def test_what_the_requests_carry_is_what_the_document_says(doc):
     assert "python-httpx" in text
     assert "`Authorization`" in text
     assert "GITHUB_TOKEN" in text
+    assert "segue i redirect solo verso `https://api.github.com`" in text
 
 
 TOKEN = "ghp_nis2EvidenceTokenThatMustNotReachTheDisk"
