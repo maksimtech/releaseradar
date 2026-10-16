@@ -93,7 +93,10 @@ ReleaseRadar contatta un solo servizio esterno:
 
 - Le pagine successive di un elenco sono chieste all'indirizzo che api.github.com
   indica nell'intestazione `Link` della propria risposta, con le stesse intestazioni,
-  token compreso. Il client non segue i redirect.
+  token compreso. Il client segue i redirect solo verso `https://api.github.com`,
+  quelli con cui GitHub risponde al vecchio nome di un repository trasferito o
+  rinominato, e al massimo cinque di fila; un redirect verso un altro host, o verso
+  HTTP in chiaro, viene rifiutato senza fare la richiesta, quindi il token non lo segue.
 - Le richieste portano lo User-Agent predefinito della libreria httpx
   (`python-httpx/<versione>`), non uno proprio di ReleaseRadar.
 - ReleaseRadar non scrive il token su disco: lo legge dalla variabile d'ambiente

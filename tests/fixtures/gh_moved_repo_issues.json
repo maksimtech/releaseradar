@@ -1,0 +1,18 @@
+{
+ "_recorded": {
+  "url": "https://api.github.com/repositories/211666/issues?state=open&sort=updated&direction=desc&per_page=100",
+  "status": 200,
+  "date": "2026-10-16T11:42:31+00:00",
+  "x-ratelimit-remaining": "49",
+  "authenticated": false,
+  "note": "Recorded from api.github.com without following redirects: joyent/node was transferred, and GitHub answers its old name with 301 to /repositories/211666. Not hand-edited."
+ },
+ "status": 200,
+ "headers": {
+  "content-type": "application/json; charset=utf-8",
+  "x-ratelimit-limit": "60",
+  "x-ratelimit-remaining": "49",
+  "x-ratelimit-reset": "1792153566"
+ },
+ "body": []
+}

@@ -36,6 +36,16 @@ the year is the generation shared by the five Radar and the count is this one's 
   CVSS 9.0 or more, customers who gave a security contact hear within 48 hours.
 
 ### Fixed
+- **A repository that changed owner or name broke its sync.** GitHub answers the old
+  `owner/name` with 301 to `/repositories/<id>/...`, and the client followed no
+  redirect, so the 301's body was walked as a page: its keys `message`, `url` and
+  `documentation_url` came back as three items, and the sync stopped on a TypeError;
+  `track` refused the repository with "GitHub answered 301". Redirects are now
+  followed within `https://api.github.com`, five at most, and refused unsent
+  anywhere else, so the token still goes to GitHub only. Recorded on 2026-10-16 from
+  joyent/node, now nodejs/node-v0.x-archive. It mattered before moving the Radar to
+  the maksimtech-com organisation, which would have turned every repository tracked
+  under maksimtech into one of these.
 - **The licence gate had never refused anything.** `pip-licenses
   --fail-on="GPL;AGPL;LGPL"` compares whole licence strings, and no package declares
   just "GPL": measured in mailradar on 2026-10-11, exit 0 without `--partial-match`
