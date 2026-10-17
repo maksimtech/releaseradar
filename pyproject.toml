@@ -114,5 +114,7 @@ also_copy = [
     # tools/security_exceptions.py, which tests/test_security_exceptions.py imports:
     # without it the run of 2026-10-17 stopped collecting, before the stats phase.
     "tools",
+    # The script tests/test_release_script.py runs, the next thing missing.
+    "release.sh",
 ]
 do_not_mutate = ["releaseradar/__init__.py"]
