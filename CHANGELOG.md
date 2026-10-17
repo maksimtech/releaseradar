@@ -7,7 +7,10 @@ the year is the generation shared by the five Radar and the count is this one's 
 
 ## [Unreleased]
 
+## [2026.6] - 2026-10-17
+
 ### Added
+
 - **`docs/nis2-compliance.md`: the answers to the seven questions a customer subject
   to NIS2 asks a software supplier, with only what the repository can back.** Written
   in Italian, for customers under d.lgs. 138/2024, after the same document in
@@ -36,6 +39,7 @@ the year is the generation shared by the five Radar and the count is this one's 
   CVSS 9.0 or more, customers who gave a security contact hear within 48 hours.
 
 ### Fixed
+
 - **A repository that changed owner or name broke its sync.** GitHub answers the old
   `owner/name` with 301 to `/repositories/<id>/...`, and the client followed no
   redirect, so the 301's body was walked as a page: its keys `message`, `url` and
@@ -52,9 +56,6 @@ the year is the generation shared by the five Radar and the count is this one's 
   and exit 1 with it, with an LGPL package installed. The flag is there now;
   ReleaseRadar's base install passes it, and so did an install with the `[mcp]`
   extra, checked by hand the same day.
-
-### Fixed
-
 - **A repository with many releases could not be synced, and every sync re-read them all.**
   renovatebot/renovate's first sync read 100 pages of releases and failed on GitHub's "422 Only the
   first 10000 results are available" (1,000 without a token: electron/electron failed too); later
@@ -98,7 +99,6 @@ the year is the generation shared by the five Radar and the count is this one's 
   opens the pull request with auto-merge, waits for the merge and tags the merge commit.
   `./release.sh --tag X` is that last step alone. The guarantees stay: nothing is committed when
   the suite fails, and the tag is made before anything is pushed. Ported from mailradar.
-
 
 ## [2026.5] - 2026-10-10
 
@@ -231,7 +231,8 @@ traffic before anything shipped; what follows is what that review changed.
   named three of the five Radar and a Claude configuration path that does not
   exist.
 
-[Unreleased]: https://github.com/maksimtech/releaseradar/compare/v2026.5...HEAD
+[Unreleased]: https://github.com/maksimtech/releaseradar/compare/v2026.6...HEAD
+[2026.6]: https://github.com/maksimtech/releaseradar/compare/v2026.5...v2026.6
 [2026.5]: https://github.com/maksimtech/releaseradar/compare/v2026.4...v2026.5
 [2026.4]: https://github.com/maksimtech/releaseradar/compare/v2026.3...v2026.4
 [2026.3]: https://github.com/maksimtech/releaseradar/compare/v2026.2...v2026.3
