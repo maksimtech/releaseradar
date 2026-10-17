@@ -111,5 +111,8 @@ also_copy = [
     "SECURITY.md",
     # docs/nis2-compliance.md, which tests/test_nis2_evidence.py holds to the code.
     "docs",
+    # tools/security_exceptions.py, which tests/test_security_exceptions.py imports:
+    # without it the run of 2026-10-17 stopped collecting, before the stats phase.
+    "tools",
 ]
 do_not_mutate = ["releaseradar/__init__.py"]
