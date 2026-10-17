@@ -172,3 +172,21 @@ def test_a_pull_request_closed_before_tracking_is_not_an_event_either(db_path, g
     pulls.mock(return_value=httpx.Response(200, json=[old]))
 
     assert sync_repo("psf", "requests", db_path=db_path) == []
+
+
+def test_any_other_refusal_on_a_later_page_still_fails_the_sync(db_path, github):
+    """Only GitHub's result limit is the end of the list. python/cpython's
+    recorded 422 — "use cursor based pagination" — is a refusal of another
+    kind, and a sync that swallowed it would report a list it never finished."""
+    import pytest
+
+    from releaseradar.github import GitHubError
+
+    first, following = renovate(github, empty_page())
+    track(db_path, "renovatebot", "renovate")
+    sync_repo("renovatebot", "renovate", db_path=db_path)
+
+    first.mock(return_value=page_one())
+    following.mock(return_value=replay("gh_cpython_issues_page100_422.json"))
+    with pytest.raises(GitHubError):
+        sync_repo("renovatebot", "renovate", db_path=db_path, on_warning=lambda _: None)
