@@ -175,19 +175,21 @@ class TestTools:
 
 
 class TestErrorsOverTheWire:
-    def test_a_refusal_reaches_the_client_as_an_error_result(self, db_path: Path):
+    def test_a_refusal_reaches_the_client_as_an_error_result(self, db_path: Path, tmp_path: Path):
         """In-process a tool raises; over stdio the SDK turns that into a result with
-        `is_error` and the sentence, which is what Claude reads."""
+        `is_error` and the sentence, which is what Claude reads. The server's stderr
+        goes to a file, for the reason given on TestOverStdio."""
         from mcp import ClientSession, StdioServerParameters
         from mcp.client.stdio import stdio_client
 
         async def session() -> tuple[bool, str]:
             env = {**os.environ, "RELEASERADAR_DB": str(db_path)}
             params = StdioServerParameters(command=sys.executable, args=["-m", "releaseradar.mcp_server"], env=env)
-            async with stdio_client(params) as (read, write), ClientSession(read, write) as s:
-                await s.initialize()
-                result = await s.call_tool("repo_status", {"repo": "nobody/nothing"})
-                return result.is_error, text_of(result)
+            with open(tmp_path / "server.err", "w", encoding="utf-8") as errlog:
+                async with stdio_client(params, errlog=errlog) as (read, write), ClientSession(read, write) as s:
+                    await s.initialize()
+                    result = await s.call_tool("repo_status", {"repo": "nobody/nothing"})
+                    return result.is_error, text_of(result)
 
         is_error, text = asyncio.run(asyncio.wait_for(session(), timeout=60))
         assert is_error is True
