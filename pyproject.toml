@@ -116,5 +116,7 @@ also_copy = [
     "tools",
     # The script tests/test_release_script.py runs, the next thing missing.
     "release.sh",
+    # The record tests/test_security_exceptions.py parses, the one after that.
+    "SECURITY-EXCEPTIONS.toml",
 ]
 do_not_mutate = ["releaseradar/__init__.py"]
