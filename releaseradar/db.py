@@ -224,6 +224,12 @@ class _DB:
             )
             return None if existing is None else str(existing["state"])
 
+    def release_tags(self, repo_id: int) -> set[str]:
+        """The tags stored for a repository: where a later release walk can stop."""
+        with self._cursor() as conn:
+            rows = conn.execute("SELECT tag_name FROM releases WHERE repo_id=?", (repo_id,)).fetchall()
+        return {row[0] for row in rows}
+
     def upsert_release(self, repo_id: int, data: dict) -> bool:
         """True when the tag was not stored before. Drafts have no `published_at`
         and are the caller's to skip: the table wants a date, because a release

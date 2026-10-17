@@ -120,7 +120,10 @@ OnPage = Callable[[int, int], None]
 
 def _paginate(client: httpx.Client, url: str, subject: str, params: dict | None = None,
               stop_when: Callable[[dict], bool] | None = None,
-              on_page: OnPage | None = None, keep: Callable[[dict], bool] | None = None) -> list[dict]:
+              on_page: OnPage | None = None, keep: Callable[[dict], bool] | None = None,
+              max_pages: int | None = None,
+              last_page_when: Callable[[list[dict]], bool] | None = None,
+              on_truncated: Callable[[str], None] | None = None) -> list[dict]:
     """Every page of a list endpoint, in GitHub's ordering.
 
     The next page is the one GitHub names in the `Link` header, not a `page`
@@ -135,6 +138,12 @@ def _paginate(client: httpx.Client, url: str, subject: str, params: dict | None 
     filters each page before it is counted or returned. `on_page` is told how
     far the walk has got after every page, which is what a spinner that stays
     silent for two minutes is missing.
+
+    `max_pages` caps the walk; `last_page_when(page)` ends it after a page it
+    accepts, that page kept whole. `on_truncated`, when given, turns GitHub's
+    422 "Only the first N results are available" into the end of the list, told
+    to it with GitHub's message: renovatebot/renovate's releases stopped there at
+    page 101 with a token, electron/electron's at page 11 without one.
     """
     results: list[dict] = []
     pages = 0
@@ -154,10 +163,19 @@ def _paginate(client: httpx.Client, url: str, subject: str, params: dict | None 
         results.extend(i for i in batch if keep is None or keep(i))
         if on_page is not None:
             on_page(len(results), pages)
+        if (max_pages is not None and pages >= max_pages) or (
+                last_page_when is not None and last_page_when(batch)):
+            break
         next_page = resp.links.get("next", {}).get("url")
         if not next_page:
             break
-        resp = _get(client, next_page, subject)
+        try:
+            resp = _get(client, next_page, subject)
+        except GitHubError as exc:
+            if on_truncated is None or exc.status != 422 or "Only the first" not in str(exc):
+                raise
+            on_truncated(str(exc))
+            break
     return results
 
 
@@ -203,9 +221,27 @@ def fetch_pull_requests(owner: str, repo: str, token: str | None = None,
 
 
 def fetch_releases(owner: str, repo: str, token: str | None = None,
-                   on_page: OnPage | None = None) -> list[dict[str, Any]]:
+                   on_page: OnPage | None = None, *, first_page_only: bool = False,
+                   known_tags: set[str] | frozenset[str] = frozenset(),
+                   on_warning: Callable[[str], None] | None = None) -> list[dict[str, Any]]:
+    """Releases, newest created first.
+
+    `first_page_only` is a first sync's walk: the stored releases serve "latest
+    release", and history is not news. With `known_tags` the walk ends after
+    the first page holding one of them — after the page, not at the tag:
+    GitHub orders by creation, and a draft created last week and published now
+    is listed after tags already known. A walk GitHub cuts short with its
+    result limit ends there, and `on_warning` is told.
+    """
+    known = set(known_tags)
     with _client(token) as c:
-        return _paginate(c, f"{_BASE}/repos/{owner}/{repo}/releases", f"{owner}/{repo}", on_page=on_page)
+        return _paginate(
+            c, f"{_BASE}/repos/{owner}/{repo}/releases", f"{owner}/{repo}", on_page=on_page,
+            max_pages=1 if first_page_only else None,
+            last_page_when=(lambda page: any(r.get("tag_name") in known for r in page)) if known else None,
+            on_truncated=(lambda why: on_warning(f"{owner}/{repo}: releases read up to GitHub's limit — {why}"))
+            if on_warning is not None else (lambda why: None),
+        )
 
 
 def open_items(owner: str, repo: str, token: str | None = None) -> int | None:

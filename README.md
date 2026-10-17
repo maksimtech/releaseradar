@@ -65,6 +65,12 @@ a handful of requests; for `python/cpython`, with 9 700 open issues and pull
 requests, about a hundred, which does not fit in the anonymous quota); later
 syncs ask only for what changed since the last one, closed included.
 
+Releases the same way: a first sync reads one page of them — the newest
+hundred — and a later one stops after the first page holding a tag it already
+has, so a repository with thousands of releases costs a request, not dozens.
+GitHub lists at most 1 000 results to an anonymous client and 10 000 to a token;
+a walk that reaches the limit ends there, with a warning, instead of failing.
+
 ```bash
 export GITHUB_TOKEN=ghp_your_token_here
 ```
@@ -168,8 +174,10 @@ releaseradar mcp                    Run the MCP server on stdio
 | `pr_merged` / `pr_closed` | a pull request it had seen open is now merged / closed |
 | `release_published` | a release it had not seen (drafts are not releases) |
 
-A comment, a label or an edit changes nothing above and produces no event.
-The first sync of a repository seeds its state and produces none either.
+A comment, a label or an edit changes nothing above and produces no event —
+including on an item closed before the tracker existed, which a later sync
+records and does not announce. The first sync of a repository seeds its state
+and produces none either.
 
 ## Security
 
