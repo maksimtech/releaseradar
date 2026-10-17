@@ -27,25 +27,36 @@ def text_of(result) -> str:
 
 
 class TestOverStdio:
-    def test_the_server_starts_lists_its_tools_and_answers(self, db_path: Path):
+    """The server is started as a subprocess, as an MCP client starts it.
+
+    Its stderr goes to a file of the test's own. stdio_client hands the child
+    `sys.stderr` by default, and a runner that swaps sys.stderr for a stream with
+    no file descriptor breaks the start: mutmut's clean-test phase does, and the
+    Saturday run stopped on "I/O operation on closed file" (found in WSL on
+    2026-10-17). A file has a descriptor whoever runs the suite, and keeps what
+    the server printed if it fails.
+    """
+
+    def test_the_server_starts_lists_its_tools_and_answers(self, db_path: Path, tmp_path: Path):
         from mcp import ClientSession, StdioServerParameters
         from mcp.client.stdio import stdio_client
 
         async def session() -> tuple[list[str], str, str]:
             env = {**os.environ, "RELEASERADAR_DB": str(db_path)}
             params = StdioServerParameters(command=sys.executable, args=["-m", "releaseradar.mcp_server"], env=env)
-            async with stdio_client(params) as (read, write), ClientSession(read, write) as s:
-                init = await s.initialize()
-                tools = [t.name for t in (await s.list_tools()).tools]
-                repos = await s.call_tool("list_repos", {})
-                return tools, text_of(repos), init.server_info.name
+            with open(tmp_path / "server.err", "w", encoding="utf-8") as errlog:
+                async with stdio_client(params, errlog=errlog) as (read, write), ClientSession(read, write) as s:
+                    init = await s.initialize()
+                    tools = [t.name for t in (await s.list_tools()).tools]
+                    repos = await s.call_tool("list_repos", {})
+                    return tools, text_of(repos), init.server_info.name
 
         tools, repos, name = asyncio.run(asyncio.wait_for(session(), timeout=60))
         assert set(tools) == TOOLS
         assert json.loads(repos) == {"repos": []}
         assert name == "releaseradar"
 
-    def test_the_cli_entry_point_runs_the_same_server(self, db_path: Path):
+    def test_the_cli_entry_point_runs_the_same_server(self, db_path: Path, tmp_path: Path):
         """`releaseradar mcp` is what `claude mcp add` and the Docker image call."""
         from mcp import ClientSession, StdioServerParameters
         from mcp.client.stdio import stdio_client
@@ -53,9 +64,10 @@ class TestOverStdio:
         async def session() -> list[str]:
             env = {**os.environ, "RELEASERADAR_DB": str(db_path)}
             params = StdioServerParameters(command=sys.executable, args=["-m", "releaseradar.cli", "mcp"], env=env)
-            async with stdio_client(params) as (read, write), ClientSession(read, write) as s:
-                await s.initialize()
-                return [t.name for t in (await s.list_tools()).tools]
+            with open(tmp_path / "server.err", "w", encoding="utf-8") as errlog:
+                async with stdio_client(params, errlog=errlog) as (read, write), ClientSession(read, write) as s:
+                    await s.initialize()
+                    return [t.name for t in (await s.list_tools()).tools]
 
         assert set(asyncio.run(asyncio.wait_for(session(), timeout=60))) == TOOLS
 
