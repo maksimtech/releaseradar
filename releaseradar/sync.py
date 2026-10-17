@@ -36,6 +36,17 @@ def _pr_kind(state: str) -> str:
     return {"open": "pr_opened", "merged": "pr_merged"}.get(state, "pr_closed")
 
 
+def _closed_before(previous: str | None, closed_at: str | None, since: str | None) -> bool:
+    """An item first seen closed, closed before the last sync: recorded, not news.
+
+    The first sync stores what is open; a later one asks for everything updated
+    since the last, and an item closed long ago that got a comment or a label
+    comes back unseen. On home-assistant/core on 2026-10-17 that announced
+    `pr_merged #186812`, merged seven and a half hours before the seed.
+    """
+    return previous is None and closed_at is not None and since is not None and closed_at < since
+
+
 Warn = Callable[[str], None]
 Progress = Callable[[str], None]
 
@@ -142,7 +153,10 @@ def sync_repo(owner: str, name: str, token: str | None = None,
                                     on_page=counter.on_page("issues"))
         pulls_future = pool.submit(_pull_requests_or_none, owner, name, token, since, on_warning,
                                    state=state, on_page=counter.on_page("pull requests"))
-        releases_future = pool.submit(gh.fetch_releases, owner, name, token, on_page=counter.on_page("releases"))
+        releases_future = pool.submit(gh.fetch_releases, owner, name, token, on_page=counter.on_page("releases"),
+                                      first_page_only=seeding,
+                                      known_tags=frozenset() if seeding else database.release_tags(repo_id),
+                                      on_warning=on_warning)
         issues = issues_future.result()
         pulls = pulls_future.result()
         releases = releases_future.result()
@@ -152,7 +166,7 @@ def sync_repo(owner: str, name: str, token: str | None = None,
         for raw in issues:
             norm = gh.normalise_issue(raw)
             previous = database.upsert_issue(repo_id, norm)
-            if seeding or previous == norm["state"]:
+            if seeding or previous == norm["state"] or _closed_before(previous, norm["closed_at"], since):
                 continue
             kind = _issue_kind(norm["state"])
             database.add_event(
@@ -165,7 +179,8 @@ def sync_repo(owner: str, name: str, token: str | None = None,
         for raw in pulls:
             norm = gh.normalise_pr(raw)
             previous = database.upsert_pr(repo_id, norm)
-            if seeding or previous == norm["state"]:
+            if seeding or previous == norm["state"] or _closed_before(
+                    previous, norm["merged_at"] or raw.get("closed_at"), since):
                 continue
             kind = _pr_kind(norm["state"])
             database.add_event(

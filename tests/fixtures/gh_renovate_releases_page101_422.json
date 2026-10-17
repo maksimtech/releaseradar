@@ -1,0 +1,18 @@
+{
+ "_recorded": {
+  "url": "https://api.github.com/repositories/76734068/releases?per_page=100&page=101",
+  "status": 422,
+  "date": "2026-10-17T11:41:07+00:00",
+  "authenticated": true,
+  "note": "Recorded from api.github.com during the 2026-10-17 audit (the 101st page of renovatebot/renovate's releases, where the first sync stopped with this error); headers trimmed to Content-Type. Not hand-edited."
+ },
+ "status": 422,
+ "headers": {
+  "content-type": "application/json; charset=utf-8"
+ },
+ "body": {
+  "message": "Only the first 10000 results are available.",
+  "documentation_url": "https://docs.github.com/rest/releases/releases#list-releases",
+  "status": "422"
+ }
+}

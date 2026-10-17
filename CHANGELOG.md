@@ -55,6 +55,17 @@ the year is the generation shared by the five Radar and the count is this one's 
 
 ### Fixed
 
+- **A repository with many releases could not be synced, and every sync re-read them all.**
+  renovatebot/renovate's first sync read 100 pages of releases and failed on GitHub's "422 Only the
+  first 10000 results are available" (1,000 without a token: electron/electron failed too); later
+  syncs read every page again, ~70 s and 22 requests for electron with nothing changed. A first
+  sync now reads one page — the stored releases serve "latest release" — and a later one stops
+  after the first page holding a known tag (after the page, so a draft published late is still
+  found). Reaching GitHub's limit ends the list with a warning.
+- **Items closed before tracking produced false events.** A later sync asks for everything updated
+  since the last; an item closed long ago that gets a comment came back unseen and read as a
+  transition — home-assistant/core announced `pr_merged #186812`, merged 7½ hours before the
+  seed. An item first seen closed is now an event only if it closed after the last sync.
 - **On a pull request, Security Posture called live exceptions unused.** CodeQL reports only what
   the change introduces on a pull request ref, so when it reported anything, an exception for a
   finding still open on main in an untouched file matched nothing and failed the gate
