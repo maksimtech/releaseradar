@@ -7,6 +7,8 @@ the year is the generation shared by the five Radar and the count is this one's 
 
 ## [Unreleased]
 
+## [2026.7] - 2026-10-23
+
 ### Security
 
 - **certifi 2026.10.19** in `uv.lock`, from 2026.7.22. The older bundle trusts emSign root CAs whose
@@ -238,7 +240,8 @@ traffic before anything shipped; what follows is what that review changed.
   named three of the five Radar and a Claude configuration path that does not
   exist.
 
-[Unreleased]: https://github.com/maksimtech/releaseradar/compare/v2026.6...HEAD
+[Unreleased]: https://github.com/maksimtech/releaseradar/compare/v2026.7...HEAD
+[2026.7]: https://github.com/maksimtech/releaseradar/compare/v2026.6...v2026.7
 [2026.6]: https://github.com/maksimtech/releaseradar/compare/v2026.5...v2026.6
 [2026.5]: https://github.com/maksimtech/releaseradar/compare/v2026.4...v2026.5
 [2026.4]: https://github.com/maksimtech/releaseradar/compare/v2026.3...v2026.4
