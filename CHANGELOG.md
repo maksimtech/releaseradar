@@ -7,6 +7,15 @@ the year is the generation shared by the five Radar and the count is this one's 
 
 ## [Unreleased]
 
+### Fixed
+
+- **Docker Scout scans the image as soon as it is published, and Security Posture reads that scan.**
+  The scan reads `latest` from Docker Hub but ran only on a push to main, weekly or by hand: after the
+  certifi release the gate stayed red on the replaced image until both were dispatched by hand.
+  `docker-scout.yml` now follows the image workflow (`workflow_run`, successful runs only) and
+  `security-posture.yml` follows the scan. `docs/nis2-compliance.md` already said the scan ran on every image build; now it does, and `tests/test_scan_after_publish.py`
+  holds them together.
+
 ### Security
 
 - **certifi 2026.10.19** in `uv.lock`, from 2026.7.22. The older bundle trusts emSign root CAs whose
