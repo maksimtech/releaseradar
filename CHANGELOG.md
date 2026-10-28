@@ -9,6 +9,13 @@ the year is the generation shared by the five Radar and the count is this one's 
 
 ### Fixed
 
+- **Docker Scout no longer fails on its own base-image advice.** From 2026-10-24 every run of
+  `docker-scout.yml` failed and GitHub mailed it on each push to main: the CVE scan worked, then the scout
+  CLI crashed in the `recommendations` part (nil pointer in `recommendations/markdown.go`) on images built
+  on python:3.12-slim-trixie. The scan is now a step of its own that writes the SARIF and fails the job if it
+  fails; the recommendations are a second step with `continue-on-error`. `tests/test_scout_steps.py`
+  holds the two apart. Same change as maksimtech/mailradar#76.
+
 - **Docker Scout scans the image as soon as it is published, and Security Posture reads that scan.**
   The scan reads `latest` from Docker Hub but ran only on a push to main, weekly or by hand: after the
   certifi release the gate stayed red on the replaced image until both were dispatched by hand.
