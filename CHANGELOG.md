@@ -7,6 +7,13 @@ the year is the generation shared by the five Radar and the count is this one's 
 
 ## [Unreleased]
 
+### Changed
+
+- **The author address published on PyPI is the project alias, github@maksimtech.com.** It was a
+  personal mailbox, which PyPI shows to anyone and bulk senders harvest: on 2026-10-31 a cold "patch
+  offer" from a mass-mailing account reached it. Releases already published keep the old address;
+  the next one carries the alias. `tests/test_package_metadata.py` keeps it that way.
+
 ### Fixed
 
 - **Docker Scout no longer fails on its own base-image advice.** From 2026-10-24 every run of
