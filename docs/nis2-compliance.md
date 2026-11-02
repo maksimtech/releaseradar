@@ -169,15 +169,14 @@ Analisi automatiche, ciascuna con il proprio workflow in `.github/workflows`:
 | --- | --- | --- |
 | `CodeQL` | analisi statica del codice | ogni pull request, ogni push su `main`, ogni settimana |
 | `Bandit` | analisi statica di sicurezza Python | ogni pull request, ogni push su `main`, ogni settimana |
-| `Trivy` | vulnerabilità note nei file del repository | ogni pull request, ogni push su `main`, ogni settimana |
-| `Snyk` | vulnerabilità note nelle dipendenze dell'installazione base e nell'immagine; analisi statica del codice | ogni pull request, ogni push su `main` |
+| `Trivy` | vulnerabilità note, alte e critiche, nei file del repository e nell'immagine costruita dal Dockerfile della pull request, prima che venga unita | ogni pull request, ogni push su `main`, ogni settimana |
 | `SonarCloud` | qualità, duplicazioni e copertura | ogni pull request, ogni push su `main` |
 | `Docker Scout` | vulnerabilità note nell'immagine | ogni push su `main`, ogni build dell'immagine, ogni settimana |
 | `Security Posture` | raccoglie gli avvisi aperti del ramo che controlla, pubblicati dagli altri, e fallisce se un avviso alto o critico non ha un'eccezione motivata | ogni pull request, ogni push su `main`, ogni settimana |
 | `mutmut` | mutation testing: verifica che i test si accorgano delle modifiche al codice | ogni settimana |
 <!-- scanners:end -->
 
-Snyk e SonarCloud saltano l'analisi sulle pull request che non ricevono i segreti del
+SonarCloud salta l'analisi sulle pull request che non ricevono i segreti del
 repository (da fork o da Dependabot) e lo segnalano nel log. Security Posture, se le
 analisi dello stesso commit non finiscono entro venti minuti o se non può leggere gli
 avvisi (per esempio su una pull request da fork), non controlla nulla e lo segnala nel
