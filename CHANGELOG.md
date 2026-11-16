@@ -43,6 +43,17 @@ the year is the generation shared by the five Radar and the count is this one's 
   not save v2026.4, and the retry is what holds. apkradar lost the same race on 2026.48, which is
   why the other five Radar now have it too.
 
+- **The image is built on Python 3.14.** It was built on `python:3.12-slim-trixie`; 3.12 has had
+  security fixes only since April 2025 and 3.13 joined it in October 2026, while 3.14 gets bug fixes
+  until October 2027 and security fixes until October 2030. 3.15, a month old, is too new for the
+  wheels an image needs. The SBOM of a release's Python environment is resolved with the same
+  interpreter, so the two SBOMs attached to a release describe one resolution;
+  `tests/test_docker_python.py`, the same in every Radar, keeps them together. All six Radar are now
+  built on 3.14. The test matrix (3.11 to 3.14) and the Python that runs the tools are unchanged.
+  Measured on 2026-11-16: the image builds on 3.14.10, `--version` runs, pip is absent, and Trivy
+  reports the same high findings as the published 3.12 image, all in Debian packages, none in
+  Python.
+
 ### Fixed
 
 - **Security Posture reads every page of alerts.** The code scanning API returns at most a hundred
