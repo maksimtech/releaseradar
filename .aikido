@@ -1,0 +1,8 @@
+# Read by Aikido Safe Chain, which takes only its own section (tests/test_safe_chain.py).
+safe-chain:
+  pip:
+    # A release installs releaseradar==<new version> minutes after uploading it,
+    # to wait for the index and to check the wheel installs; the 48-hour age
+    # check would hide exactly that version. Nothing else is spared.
+    minimumPackageAgeExclusions:
+      - releaseradar

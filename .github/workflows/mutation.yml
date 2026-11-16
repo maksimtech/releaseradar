@@ -20,6 +20,11 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: "3.12"
+
+      # Every pip, uv and python after this goes through Aikido Safe Chain
+      # (tests/test_safe_chain.py).
+      - name: Aikido Safe Chain
+        uses: ./.github/actions/safe-chain
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip

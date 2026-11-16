@@ -7,6 +7,23 @@ the year is the generation shared by the five Radar and the count is this one's 
 
 ## [Unreleased]
 
+### Added
+
+- **Every package the CI installs from PyPI goes through Aikido Safe Chain.** None of the scanners
+  here tells a malicious package from a clean one: they match versions against advisories, and a
+  package published to steal tokens has none on the day it is installed. Safe Chain (1.5.27,
+  AGPL, no account or token) checks each download against Aikido's malware list and hides releases
+  younger than 48 hours. The nine jobs that install set it up through
+  `.github/actions/safe-chain`, after setup-python, and the action proves it blocks — pip on PATH
+  is the shim, `safe-chain-verify` answers, and Aikido's canary package is refused with Safe
+  Chain's own message — because the installer only warns when its setup fails. Its shims stand in
+  for `pip`, `uv` and `python` by name, so the installs that went by a venv's path (the SBOM venvs,
+  and `install_from_pypi.sh` in a release) now run `pip --python <venv>`: measured on 2026-11-16, a
+  venv's pip called by its path went to PyPI unchecked. `.aikido` spares releaseradar alone from
+  the age check, which would otherwise hide the version a release installs minutes after
+  uploading it. Not covered: pip inside `docker build`. `tests/test_safe_chain.py` holds all of
+  it. A pilot: the other five Radar follow once it has run here.
+
 ### Changed
 
 - **The sqlite3 findings say what Debian decided, and Trivy's two new ones are recorded.** On

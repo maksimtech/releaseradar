@@ -466,7 +466,7 @@ def test_the_source_sbom_leaves_out_what_the_image_removes(evidence):
     not ship. The environment described drops it the same way."""
     assert "pip uninstall pip -y" in DOCKERFILE.read_text(encoding="utf-8")
     sbom = step(evidence, "SBOM of the Python environment")
-    install = sbom.index('pip install --quiet ".[mcp]"')
+    install = sbom.index('install --quiet ".[mcp]"')
     uninstall = sbom.index("/tmp/product/bin/python -m pip uninstall --yes --quiet pip")
     describe = sbom.index("cyclonedx-py environment")
     assert install < uninstall < describe
@@ -489,13 +489,15 @@ def test_the_source_sbom_names_the_package_and_the_extra_the_image_ships():
     evidence = EVIDENCE.read_text(encoding="utf-8")
     assert "--pyproject pyproject.toml --mc-type application" in evidence
     assert "[mcp]" in DOCKERFILE.read_text(encoding="utf-8")
-    assert 'pip install --quiet ".[mcp]"' in evidence
+    assert 'install --quiet ".[mcp]"' in evidence
 
 
 def test_the_evidence_job_pins_its_actions():
     for line in EVIDENCE.read_text(encoding="utf-8").splitlines():
         if "uses:" in line:
             ref = line.split("uses:", 1)[1].split("#")[0].strip()
+            if ref.startswith("./"):
+                continue  # an action of this repository, pinned by the commit it is in
             assert re.search(r"@[0-9a-f]{40}$", ref), f"not pinned to a commit: {line.strip()}"
 
 
