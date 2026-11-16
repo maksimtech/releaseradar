@@ -54,30 +54,39 @@ BASH = _bash()
 
 @pytest.fixture
 def fake_venv(tmp_path):
-    """A venv whose `bin/pip` fails until the call count reaches SUCCEED_AT.
+    """A `pip` on PATH that fails until the call count reaches SUCCEED_AT, and a
+    venv whose own pip must never be called.
 
     The script is run for real, by bash, against this venv, as publish.yml runs it
     against the one it has just created. What is faked is only the answer from the
-    index.
+    index. The pip it calls is the one on PATH, by name, because that is the one
+    Safe Chain's shim stands in for (tests/test_safe_chain.py); the venv's pip,
+    called by its path, would go to PyPI unchecked.
     """
     venv = tmp_path / "verify"
     (venv / "bin").mkdir(parents=True)
+    on_path = tmp_path / "path"
+    on_path.mkdir()
     log = tmp_path / "installs.log"
-    pip = venv / "bin" / "pip"
-    pip.write_text(
-        "#!/bin/sh\n"
-        f'echo "$@" >> "{log.as_posix()}"\n'
-        f'n=$(wc -l < "{log.as_posix()}")\n'
-        '[ "$n" -ge "$SUCCEED_AT" ]\n',
-        encoding="utf-8",
-    )
-    pip.chmod(0o755)
+    bypass = tmp_path / "venv-pip.log"
+    for pip, record, answer in (
+        (on_path / "pip", log, '[ "$n" -ge "$SUCCEED_AT" ]\n'),
+        (venv / "bin" / "pip", bypass, "exit 0\n"),
+    ):
+        pip.write_text(
+            "#!/bin/sh\n"
+            f'echo "$@" >> "{record.as_posix()}"\n'
+            f'n=$(wc -l < "{record.as_posix()}")\n' + answer,
+            encoding="utf-8",
+        )
+        pip.chmod(0o755)
+    env = {**os.environ, "PATH": f"{on_path}{os.pathsep}{os.environ['PATH']}"}
 
     def run(succeed_at, *args, with_venv=True):
         command = [BASH, str(INSTALL_FROM_PYPI), *([venv.as_posix()] if with_venv else []), *args]
         proc = subprocess.run(
             command,
-            env={**os.environ, "SUCCEED_AT": str(succeed_at)},
+            env={**env, "SUCCEED_AT": str(succeed_at)},
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -92,12 +101,14 @@ def fake_venv(tmp_path):
         """The same script, left running, for the one case that is about *not* finishing."""
         return subprocess.Popen(
             [BASH, str(INSTALL_FROM_PYPI), venv.as_posix(), *args],
-            env={**os.environ, "SUCCEED_AT": str(succeed_at)},
+            env={**env, "SUCCEED_AT": str(succeed_at)},
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
 
     run.start = start
+    run.venv = venv
+    run.bypass = bypass
     return run
 
 
@@ -106,10 +117,20 @@ def test_the_install_asks_the_venv_for_the_exact_wheel_and_stops_on_success(fake
 
     assert proc.returncode == 0, proc.stderr
     assert len(calls) == 1
-    assert calls[0].split()[0] == "install"
+    assert calls[0].split()[:3] == ["--python", f"{fake_venv.venv.as_posix()}/bin/python", "install"]
     assert "--no-cache-dir" in calls[0]  # a cached answer is the one thing not to trust
     assert "--only-binary :all:" in calls[0]  # the wheel that was uploaded, not a build of the sdist
     assert f"{PACKAGE}==2026.48" in calls[0]
+
+
+def test_the_venv_s_own_pip_is_never_the_one_that_downloads(fake_venv):
+    """Called by its path it skips the shims on PATH, and with them Safe Chain:
+    measured on 2026-11-16, the canary package Safe Chain blocks for `pip` and for
+    `pip --python <venv>` went straight to PyPI from `<venv>/bin/pip`."""
+    proc, _ = fake_venv(1, PACKAGE, "2026.48", "5", "0")
+
+    assert proc.returncode == 0, proc.stderr
+    assert not fake_venv.bypass.exists(), fake_venv.bypass.read_text(encoding="utf-8")
 
 
 def test_the_install_is_asked_again_until_the_index_answering_it_has_caught_up(fake_venv):

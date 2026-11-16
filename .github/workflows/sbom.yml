@@ -86,15 +86,22 @@ jobs:
       # because the Dockerfile installs it on both of its branches: the
       # environment described is the one the image ships, resolved on the day
       # this runs (the image's own SBOM lists the versions it actually holds).
+
+      # Every pip, uv and python after this goes through Aikido Safe Chain
+      # (tests/test_safe_chain.py).
+      - name: Aikido Safe Chain
+        uses: ./.github/actions/safe-chain
       - name: SBOM of the Python environment
         run: |
           python -m venv /tmp/product
-          /tmp/product/bin/pip install --quiet ".[mcp]"
+          # pip on PATH, pointed at the venv: by name it is Safe Chain's shim, while
+          # /tmp/product/bin/pip, called by its path, would skip it.
+          pip --python /tmp/product/bin/python install --quiet ".[mcp]"
           # The Dockerfile removes pip from the image; the venv's own copy is not
           # part of what ships, and the first sbom-source of v2026.5 listed it.
           /tmp/product/bin/python -m pip uninstall --yes --quiet pip
           python -m venv /tmp/cyclonedx
-          /tmp/cyclonedx/bin/pip install --quiet "cyclonedx-bom==7.4.0"
+          pip --python /tmp/cyclonedx/bin/python install --quiet "cyclonedx-bom==7.4.0"
           # --pyproject names the product as the SBOM's main component; without
           # it the file lists an environment and does not say whose.
           /tmp/cyclonedx/bin/cyclonedx-py environment /tmp/product/bin/python \

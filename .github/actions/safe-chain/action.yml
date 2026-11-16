@@ -1,0 +1,50 @@
+name: Aikido Safe Chain
+description: >-
+  Puts Aikido Safe Chain's shims in front of pip, uv and python for the rest of
+  the job, then proves they block before anything is installed. Goes after
+  setup-python and before the first install; tests/test_safe_chain.py says why.
+runs:
+  using: composite
+  steps:
+    - name: Install Safe Chain
+      shell: bash
+      env:
+        # Published 2026-10-30: the Radar take a release once it is 14 days old.
+        SAFE_CHAIN_VERSION: "1.5.27"
+        # install-safe-chain.sh of that release, as GitHub records its digest. The
+        # script carries the hash of the binary it downloads and checks it in turn.
+        INSTALLER_SHA256: "600ebddcb3aaf1fd53653a8d7985df44528722c0f5ee7eb9fff86f26a1a4e5a8"
+      run: |
+        installer="${RUNNER_TEMP}/install-safe-chain.sh"
+        curl -fsSL "https://github.com/AikidoSec/safe-chain/releases/download/${SAFE_CHAIN_VERSION}/install-safe-chain.sh" -o "$installer"
+        echo "${INSTALLER_SHA256}  ${installer}" | sha256sum -c -
+        sh "$installer" --ci
+        rm "$installer"
+
+    # A step of its own: the shims reach PATH through GITHUB_PATH, which applies
+    # from the next step on. And a proof, not a trust: the installer prints a
+    # warning and exits 0 when `safe-chain setup-ci` fails.
+    - name: Prove Safe Chain blocks
+      shell: bash
+      run: |
+        set -euo pipefail
+        pip_on_path="$(command -v pip)"
+        if [ "$pip_on_path" != "$HOME/.safe-chain/shims/pip" ]; then
+          echo "::error::pip on PATH is ${pip_on_path}, not Safe Chain's shim"
+          exit 1
+        fi
+        pip safe-chain-verify | tee "${RUNNER_TEMP}/safe-chain-verify.log"
+        grep -q "OK: Safe-chain works!" "${RUNNER_TEMP}/safe-chain-verify.log"
+        # safe-chain-pi-test is Aikido's canary. It does not exist on PyPI, so pip
+        # fails on it with or without Safe Chain; only the message tells the two apart.
+        canary="${RUNNER_TEMP}/safe-chain-canary.log"
+        if pip install --no-cache-dir --disable-pip-version-check safe-chain-pi-test > "$canary" 2>&1; then
+          echo "::error::the canary package installed"
+          exit 1
+        fi
+        if ! grep -q "blocked by safe-chain" "$canary"; then
+          cat "$canary"
+          echo "::error::the canary failed, but not because Safe Chain blocked it"
+          exit 1
+        fi
+        echo "Safe Chain blocked the canary package"

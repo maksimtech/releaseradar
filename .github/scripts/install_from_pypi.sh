@@ -13,6 +13,10 @@
 # The price: a wheel that is genuinely broken fails after attempts x interval (five
 # minutes by default) instead of at once. pip's last error is in the log above the
 # verdict either way.
+#
+# The pip that downloads is the one on PATH, by name, pointed at the venv with
+# --python: that name is what Aikido Safe Chain's shim stands in for. "<venv>/bin/pip",
+# called by its path, skips the shim and asks PyPI unchecked (tests/test_safe_chain.py).
 set -uo pipefail
 
 if [ $# -lt 3 ]; then
@@ -27,7 +31,7 @@ ATTEMPTS="${4:-10}"
 INTERVAL="${5:-30}"
 
 for attempt in $(seq 1 "$ATTEMPTS"); do
-    if "${VENV}/bin/pip" install --no-cache-dir --disable-pip-version-check \
+    if pip --python "${VENV}/bin/python" install --no-cache-dir --disable-pip-version-check \
             --only-binary :all: "${PACKAGE}==${VERSION}"; then
         echo "${PACKAGE}==${VERSION} installed from PyPI (attempt ${attempt}/${ATTEMPTS})"
         exit 0

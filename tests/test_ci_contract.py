@@ -106,6 +106,8 @@ def test_the_actions_are_pinned_by_sha(workflow):
     """This repository pins its actions to a full commit, and a new step should
     not be the one exception."""
     for uses in re.findall(r"uses:\s*(\S+)", workflow):
+        if uses.startswith("./"):
+            continue  # an action of this repository, pinned by the commit it is in
         assert re.search(r"@[0-9a-f]{40}$", uses), f"{uses} is not pinned to a commit"
 
 
