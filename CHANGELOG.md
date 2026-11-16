@@ -36,6 +36,13 @@ the year is the generation shared by the five Radar and the count is this one's 
   offer" from a mass-mailing account reached it. Releases already published keep the old address;
   the next one carries the alias. `tests/test_package_metadata.py` keeps it that way.
 
+- **The retried install that checks a release is a tested script, the same in all six Radar.** The
+  loop added to *Publish to PyPI* after v2026.2 and v2026.4 sat inline in the workflow with no test.
+  It is now `.github/scripts/install_from_pypi.sh`, run by `tests/test_install_from_pypi.py`, and
+  installs the wheel only (`--only-binary :all:`). The 45 s grace in front of it goes to 0: it did
+  not save v2026.4, and the retry is what holds. apkradar lost the same race on 2026.48, which is
+  why the other five Radar now have it too.
+
 ### Fixed
 
 - **Security Posture reads every page of alerts.** The code scanning API returns at most a hundred
