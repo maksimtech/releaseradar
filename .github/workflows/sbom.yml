@@ -74,11 +74,12 @@ jobs:
         with:
           ref: ${{ env.TAG }}
 
-      # The Python of the image's base, python:3.12-slim-trixie.
+      # The interpreter of the image (python:3.14-slim-trixie), so that the two
+      # SBOMs describe the same dependency resolution (tests/test_docker_python.py).
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version: "3.14"
 
       # Two environments: the one described holds the package and what it pulls
       # in, and nothing of the tool that describes it. With the [mcp] extra,

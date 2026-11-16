@@ -34,7 +34,7 @@ The details, host by host and table by table, are in
   every push to `main` and weekly. Trivy also scans the image built from the
   Dockerfile of the pull request, before it is merged.
 - **Docker Scout** checks the image on every push to `main`, on every image build
-  and weekly. The image is built on `python:3.12-slim-trixie` (Debian Trixie), and
+  and weekly. The image is built on `python:3.14-slim-trixie` (Debian Trixie), and
   `latest` is scheduled to be rebuilt weekly to pick up Debian's security patches.
 - **Security Posture** reads the open alerts of the ref it runs on that all of the
   above publish to GitHub code scanning, after waiting for that commit's analyses,
