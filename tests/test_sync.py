@@ -273,7 +273,7 @@ class TestInvalidStoredNames:
         database = track(db_path, "psf", "requests")
         for owner, name in (("psf", "re\x00quests"), ("psf", "re\nquests"), ("..", "..")):
             database.add_repo(owner, name)
-        assert [(r["owner"], r["name"]) for r in invalid_repos(database)] == [
+        assert invalid_repos(database) == [
             ("..", ".."), ("psf", "re\x00quests"), ("psf", "re\nquests")]
 
     def test_untrack_invalid_removes_them_with_their_data_and_nothing_else(self, db_path):

@@ -10,7 +10,6 @@ else, and is not an event either.
 from __future__ import annotations
 
 import json
-import sqlite3
 import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -46,9 +45,10 @@ def shown_repo(owner: str, name: str) -> str:
     return key if name_is_valid(owner, name) else repr(key)
 
 
-def invalid_repos(database: _db._DB) -> list[sqlite3.Row]:
-    """The stored rows whose names GitHub could not have given, in `list` order."""
-    return [row for row in database.list_repos() if not name_is_valid(row["owner"], row["name"])]
+def invalid_repos(database: _db._DB) -> list[tuple[str, str]]:
+    """(owner, name) of the stored rows whose names GitHub could not have given, in `list` order."""
+    stored = [(str(row["owner"]), str(row["name"])) for row in database.list_repos()]
+    return [(owner, name) for owner, name in stored if not name_is_valid(owner, name)]
 
 
 def untrack_invalid(db_path: Path) -> list[str]:
@@ -59,9 +59,9 @@ def untrack_invalid(db_path: Path) -> list[str]:
     deleted by are the stored ones, never typed."""
     database = _db.open_db(db_path)
     removed: list[str] = []
-    for row in invalid_repos(database):
-        if database.remove_repo(row["owner"], row["name"]):
-            removed.append(shown_repo(row["owner"], row["name"]))
+    for owner, name in invalid_repos(database):
+        if database.remove_repo(owner, name):
+            removed.append(shown_repo(owner, name))
     return removed
 
 
