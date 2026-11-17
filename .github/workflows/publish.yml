@@ -27,8 +27,11 @@ jobs:
         uses: ./.github/actions/safe-chain
       - name: Install build dependencies
         run: pip install --upgrade build hatchling  # NOSONAR
+      # Without isolation: python -m build would fetch hatchling into an environment
+      # of its own, which the python shim passes straight through, unchecked. The
+      # step above installed it through Safe Chain (tests/test_safe_chain.py).
       - name: Build package
-        run: python -m build
+        run: python -m build --no-isolation
       - name: Import GPG key
         run: |
           echo "${{ secrets.GPG_PRIVATE_KEY }}" > /tmp/gpg_key.asc

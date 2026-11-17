@@ -21,8 +21,15 @@ the year is the generation shared by the five Radar and the count is this one's 
   and `install_from_pypi.sh` in a release) now run `pip --python <venv>`: measured on 2026-11-16, a
   venv's pip called by its path went to PyPI unchecked. `.aikido` spares releaseradar alone from
   the age check, which would otherwise hide the version a release installs minutes after
-  uploading it. Not covered: pip inside `docker build`. `tests/test_safe_chain.py` holds all of
-  it. A pilot: the other five Radar follow once it has run here.
+  uploading it. The package is built with `python -m build --no-isolation` after pip has installed
+  hatchling: build's own isolated environment is fetched by a `python` the shim passes straight
+  through, and on 2026-11-17 a project whose build requirement was the canary had it blocked under
+  `pip install -e .` and fetched unchecked under `python -m build`. Release Evidence sets the
+  action up from the workflow's own commit before checking the tag out, so the evidence of a tag
+  cut before the action existed can still be rebuilt. The action's version pin is not called
+  `SAFE_CHAIN_VERSION`, a name the installer reads as its own deprecated pin. Not covered: pip
+  inside `docker build`. `tests/test_safe_chain.py` holds all of it. A pilot: the other five Radar
+  follow once it has run here.
 
 ### Changed
 
@@ -78,6 +85,10 @@ the year is the generation shared by the five Radar and the count is this one's 
   after the 13.8 point release that is due.
 
 ### Fixed
+
+- **SonarCloud files each analysis under the version of the package.** `sonar-project.properties`
+  said `sonar.projectVersion=2026.1` from the first commit to 2026.6, and nothing updated it. The
+  scan now reads `__version__` and passes it, as cookieradar does (`tests/test_sonar_version.py`).
 
 - **Security Posture reads every page of alerts.** The code scanning API returns at most a hundred
   alerts per call, and the gate read one page of each list. Found in cookieradar on 2026-11-13
