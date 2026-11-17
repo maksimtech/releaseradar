@@ -14,6 +14,7 @@ import os
 import sys
 from pathlib import Path
 
+import httpx
 import pytest
 
 from releaseradar import db as _db
@@ -86,10 +87,13 @@ def call(server, name: str, **arguments):
 def refused(server, name: str, **arguments) -> str:
     """The message of the ToolError a tool raises. Over the wire the SDK turns it
     into a result with `is_error`; in-process it is the exception itself."""
-    from mcp.server.mcpserver.exceptions import ToolError
+    from mcp.server.mcpserver.exceptions import ToolError, UnexpectedToolError
 
     with pytest.raises(ToolError) as exc:
         call(server, name, **arguments)
+    # A crash reaches the client as a bare "Error executing tool <name>": a
+    # refusal is a ToolError raised on purpose, with its sentence.
+    assert not isinstance(exc.value, UnexpectedToolError), exc.value.__cause__
     return str(exc.value)
 
 
@@ -174,6 +178,45 @@ class TestTools:
         assert "not being tracked" in refused(server, "repo_status", repo="nobody/nothing")
 
 
+class TestRepositoryNames:
+    """Seen live on 2026-11-17: `track_repo("../users")` tracked GET /users, and a
+    NUL in the name came back as a bare "Error executing tool track_repo"."""
+
+    @pytest.mark.parametrize("repo", ["../users", "../..", "psf/requests#x", "psf/requests?", "psf/re\x00quests",
+                                      "psf/re\nquests"])
+    def test_track_refuses_a_name_that_leaves_the_repository_path(self, server, db_path, github, repo):
+        github.get(f"{API}/users").mock(return_value=httpx.Response(200, json=[{"login": "mojombo"}]))
+        github.get(f"{API}/repos/psf/requests").mock(return_value=replay("gh_codecov-mcp_repo.json"))
+        assert "owner/repo" in refused(server, "track_repo", repo=repo)
+        assert github.calls.call_count == 0
+        assert _db.open_db(db_path).list_repos() == []
+
+    @pytest.mark.parametrize("tool", ["untrack_repo", "sync_repo", "repo_status"])
+    def test_every_tool_that_takes_a_name_checks_it(self, server, db_path, github, tool):
+        assert "owner/repo" in refused(server, tool, repo="../..")
+        assert github.calls.call_count == 0
+
+    def test_a_name_tracked_before_names_were_checked_can_be_untracked(self, server, db_path):
+        _db.open_db(db_path).add_repo("psf", "requests#x")
+        assert json.loads(text_of(call(server, "untrack_repo", repo="psf/requests#x"))) == {
+            "untracked": "psf/requests#x"}
+        assert _db.open_db(db_path).list_repos() == []
+
+    def test_sync_all_reports_a_malformed_tracked_name_and_syncs_the_rest(self, server, db_path, github):
+        github.get(f"{API}/repos/psf/requests").mock(return_value=replay("gh_codecov-mcp_repo.json"))
+        route_repo(github, "maksimtech", "cookieradar",
+                   "gh_codecov-mcp_issues_all.json", "gh_codecov-mcp_pulls_all.json", "gh_cookieradar_releases.json")
+        database = _db.open_db(db_path)
+        database.add_repo("maksimtech", "cookieradar")
+        database.add_repo("psf", "requests#x")
+
+        everything = json.loads(text_of(call(server, "sync_all")))
+
+        assert everything["results"] == {"maksimtech/cookieradar": []}
+        assert list(everything["errors"]) == ["psf/requests#x"]
+        assert "untrack" in everything["errors"]["psf/requests#x"]
+
+
 class TestErrorsOverTheWire:
     def test_a_refusal_reaches_the_client_as_an_error_result(self, db_path: Path, tmp_path: Path):
         """In-process a tool raises; over stdio the SDK turns that into a result with
@@ -194,3 +237,23 @@ class TestErrorsOverTheWire:
         is_error, text = asyncio.run(asyncio.wait_for(session(), timeout=60))
         assert is_error is True
         assert "not being tracked" in text
+
+    def test_a_name_with_a_nul_in_it_is_refused_with_a_sentence(self, db_path: Path, tmp_path: Path):
+        """It reached httpx, which raised InvalidURL, and the client read only
+        "Error executing tool track_repo" (seen live on 2026-11-17)."""
+        from mcp import ClientSession, StdioServerParameters
+        from mcp.client.stdio import stdio_client
+
+        async def session() -> tuple[bool, str]:
+            env = {**os.environ, "RELEASERADAR_DB": str(db_path)}
+            params = StdioServerParameters(command=sys.executable, args=["-m", "releaseradar.mcp_server"], env=env)
+            with open(tmp_path / "server.err", "w", encoding="utf-8") as errlog:
+                async with stdio_client(params, errlog=errlog) as (read, write), ClientSession(read, write) as s:
+                    await s.initialize()
+                    result = await s.call_tool("track_repo", {"repo": "psf/re\x00quests"})
+                    return result.is_error, text_of(result)
+
+        is_error, text = asyncio.run(asyncio.wait_for(session(), timeout=60))
+        assert is_error is True
+        assert "owner/repo" in text
+        assert _db.open_db(db_path).list_repos() == []

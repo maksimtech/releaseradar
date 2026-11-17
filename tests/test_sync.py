@@ -212,6 +212,50 @@ class TestSyncAll:
         assert list(errors) == ["maksimtech/does-not-exist-xyz"]
         assert "not found" in errors["maksimtech/does-not-exist-xyz"]
 
+    def test_a_malformed_tracked_name_is_reported_and_the_others_still_sync(self, db_path, github):
+        """`track psf/requests#x` was accepted before names were checked: the
+        fragment was dropped, GET /repos/psf/requests answered 200, and the row
+        stayed. Its sync walked the repository object as a page of issues and
+        raised a TypeError that stopped sync_all for every repository — the CLI,
+        the dashboard's poller and the MCP tool (seen live on 2026-11-17). Such a
+        row is now refused by name, before anything is asked of GitHub."""
+        github.get(f"{API}/repos/psf/requests").mock(return_value=replay("gh_codecov-mcp_repo.json"))
+        route_repo(github, "maksimtech", "cookieradar", empty_page(), empty_page(), "gh_cookieradar_releases.json")
+        database = track(db_path, "maksimtech", "cookieradar")
+        database.add_repo("psf", "requests#x")
+        database.add_repo("..", "..")
+
+        results, errors = sync_all(db_path=db_path)
+
+        assert results == {"maksimtech/cookieradar": []}
+        assert sorted(errors) == ["../..", "psf/requests#x"]
+        assert "untrack" in errors["psf/requests#x"]
+        assert github.calls.call_count == 3  # the three walks of cookieradar, and nothing else
+
+    def test_an_unexpected_failure_in_one_repository_does_not_stop_the_rest(self, db_path, github):
+        """Whatever goes wrong with one repository is that repository's error. An
+        issue without a number — derived from the recording by dropping the field —
+        is not something GitHub sends, and a KeyError is what it raised."""
+        broken = [{k: v for k, v in issue.items() if k != "number"}
+                  for issue in recorded("gh_requests_issues_open_5.json")["body"]]
+        route_repo(github, "psf", "requests", httpx.Response(200, json=broken), empty_page(), empty_page())
+        route_repo(github, "maksimtech", "cookieradar", empty_page(), empty_page(), "gh_cookieradar_releases.json")
+        database = track(db_path, "psf", "requests")
+        database.add_repo("maksimtech", "cookieradar")
+
+        results, errors = sync_all(db_path=db_path)
+
+        assert results == {"maksimtech/cookieradar": []}
+        assert list(errors) == ["psf/requests"]
+        assert "KeyError" in errors["psf/requests"]
+        assert database.repo_summary("psf", "requests")["last_synced_at"] is None
+
+    def test_sync_repo_refuses_a_malformed_name_without_asking_github(self, db_path, github):
+        track(db_path, "..", "users")
+        with pytest.raises(gh.InvalidRepoName):
+            sync_repo("..", "users", db_path=db_path)
+        assert github.calls.call_count == 0
+
 
 class TestRepositoriesWithoutPullRequests:
     """torvalds/linux, the README's own first example: GitHub serves the repository,

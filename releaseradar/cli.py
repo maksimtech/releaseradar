@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, NoReturn
 
 import typer
 from rich import print as rprint
@@ -50,16 +50,18 @@ def _db_path() -> Path:
     return Path(path) if path else _db._DEFAULT_DB
 
 
-def _fail(message: str) -> None:
+def _fail(message: str) -> NoReturn:
     rprint(f"[red]Error:[/red] {message}")
     raise typer.Exit(1)
 
 
 def _split(repo: str) -> tuple[str, str]:
-    owner, sep, name = repo.strip().partition("/")
-    if not sep or not owner or not name or "/" in name:
-        _fail("repo must be in owner/repo format, e.g. torvalds/linux.")
-    return owner, name
+    """owner/repo by GitHub's rules, or exit 1 saying what is wrong with it."""
+    try:
+        return gh.split_repo(repo)
+    except gh.InvalidRepoName as exc:
+        # The refusal quotes the name, and `[/b]` in it is markup to rich.
+        _fail(escape(str(exc)))
 
 
 # ── version ──────────────────────────────────────────────────────────────────
@@ -110,12 +112,16 @@ def untrack(
     repo: Annotated[str, typer.Argument(help="owner/repo to stop tracking")],
 ) -> None:
     """Stop tracking a repository and remove all its data."""
-    owner, name = _split(repo)
     database = _db.open_db(_db_path())
-    if database.remove_repo(owner, name):
-        rprint(f"[yellow]✓[/yellow] Stopped tracking [bold]{owner}/{name}[/bold]")
-    else:
-        _fail(f"{owner}/{name} was not being tracked.")
+    # The name as stored, unchecked, first: a row an earlier version accepted
+    # under a name GitHub could not have given is removed by that name, which
+    # nothing else matches. Only then is the name checked, to say what is wrong.
+    owner, sep, name = repo.strip().partition("/")
+    if sep and database.remove_repo(owner, name):
+        rprint(f"[yellow]✓[/yellow] Stopped tracking [bold]{escape(owner)}/{escape(name)}[/bold]")
+        return
+    owner, name = _split(repo)
+    _fail(f"{owner}/{name} was not being tracked.")
 
 
 # ── list ──────────────────────────────────────────────────────────────────────
@@ -312,6 +318,11 @@ def web(
     every: Annotated[float, typer.Option("--every", min=1, help="Minutes between syncs")] = 15,
     port: Annotated[int, typer.Option("--port", min=1, max=65535, help="Port on 127.0.0.1")] = 8765,
     no_browser: Annotated[bool, typer.Option("--no-browser", help="Do not open the page in the browser")] = False,
+    allow_host: Annotated[
+        list[str] | None,
+        typer.Option("--allow-host", help="Another Host the page may be reached under (repeatable), "
+                                          "e.g. an alias or a tunnel's localhost:9000"),
+    ] = None,
 ) -> None:
     """Open a local dashboard (127.0.0.1 only) that syncs every few minutes and shows what changed."""
     from .web import serve
@@ -319,7 +330,8 @@ def web(
     if not _db.open_db(_db_path()).list_repos():
         rprint("[dim]Nothing tracked yet. Add a repo with [bold]releaseradar track owner/repo[/bold]; "
                "the page will pick it up at the next sync.[/dim]")
-    serve(db_path=_db_path(), token=_token(), every_minutes=every, port=port, open_browser=not no_browser)
+    serve(db_path=_db_path(), token=_token(), every_minutes=every, port=port, open_browser=not no_browser,
+          extra_hosts=allow_host or [])
 
 
 # ── mcp ───────────────────────────────────────────────────────────────────────

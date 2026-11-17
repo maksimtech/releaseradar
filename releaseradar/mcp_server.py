@@ -43,10 +43,15 @@ def _db_path() -> Path:
 
 
 def _split(repo: str) -> tuple[str, str]:
-    owner, sep, name = repo.strip().partition("/")
-    if not sep or not owner or not name or "/" in name:
-        raise ToolError("repo must be in owner/repo format, e.g. torvalds/linux")
-    return owner, name
+    """owner/repo by GitHub's rules, or a ToolError saying what is wrong with it.
+
+    A name the SDK sees fail any other way reaches the client as a bare "Error
+    executing tool": a NUL in it did, from deep inside httpx (2026-11-17).
+    """
+    try:
+        return gh.split_repo(repo)
+    except gh.InvalidRepoName as exc:
+        raise ToolError(str(exc)) from exc
 
 
 def _event_dict(row) -> dict:
@@ -87,12 +92,16 @@ async def track_repo(repo: str) -> dict:
 @server.tool()
 async def untrack_repo(repo: str) -> dict:
     """Stop tracking a repository and remove all its stored data."""
-    owner, name = _split(repo)
+    # The name as stored, unchecked, first: a row an earlier version accepted
+    # under a name GitHub could not have given is removed by that name, which
+    # nothing else matches. Only then is the name checked, to say what is wrong.
+    stored_owner, sep, stored_name = repo.strip().partition("/")
 
     def work() -> dict:
-        if not _db.open_db(_db_path()).remove_repo(owner, name):
-            raise NotTracked(f"{owner}/{name} was not being tracked")
-        return {"untracked": f"{owner}/{name}"}
+        if sep and _db.open_db(_db_path()).remove_repo(stored_owner, stored_name):
+            return {"untracked": f"{stored_owner}/{stored_name}"}
+        owner, name = _split(repo)
+        raise NotTracked(f"{owner}/{name} was not being tracked")
 
     return await _in_thread(work)
 

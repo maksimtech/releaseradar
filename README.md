@@ -91,7 +91,13 @@ release, the feed of what changed (new entries highlighted as they arrive), the
 last and next sync, a *Sync now* button, and the poller's warnings and errors.
 It runs the same `sync` as the CLI, on a timer, with the same database and
 the same `GITHUB_TOKEN`. Standard library only, bound to 127.0.0.1, no login:
-it is for the machine it runs on.
+it is for the machine it runs on. It answers only requests whose `Host` is
+`127.0.0.1`, `localhost` or `[::1]` with its port, so a web page cannot read it
+by pointing a domain of its own at 127.0.0.1 (DNS rebinding), and *Sync now*
+(`POST /api/sync`) only from its own page (its `Origin`, or
+`Sec-Fetch-Site: same-origin`), so another site cannot start a sync with your
+token. Reached under another name, an alias or an SSH tunnel, say so with
+`--allow-host NAME[:PORT]`, once per name.
 
 ## Configuration
 
@@ -146,7 +152,8 @@ From the Docker image, the same server with `-i`:
 Tools exposed: `track_repo`, `untrack_repo`, `list_repos`, `sync_repo`,
 `sync_all`, `repo_status`, `recent_events`. A repository GitHub refuses comes
 back as a tool error with the reason — not found, rate limit with its reset
-time, bad token — never as a traceback.
+time, bad token — never as a traceback. So does a name that is not
+`owner/repo` by GitHub's rules, and nothing is asked of GitHub with it.
 
 ## CLI reference
 
@@ -163,6 +170,11 @@ releaseradar notify --dry-run       Print without marking
 releaseradar web [--every N]        Local dashboard, syncing every N minutes (default 15)
 releaseradar mcp                    Run the MCP server on stdio
 ```
+
+`owner/repo` is checked against GitHub's own rules before anything is sent or
+stored: letters, digits and hyphens for the owner; letters, digits, `.`, `_` and
+`-` for the repository, never `.` or `..`. A repository that fails to sync, for
+whatever reason, is reported on its own line and the others still sync.
 
 ## What counts as an event
 

@@ -57,9 +57,19 @@ Oltre alla riga di comando ha due interfacce:
   HTTP in chiaro e non ha autenticazione: qualunque utente o processo della stessa
   macchina che raggiunge quella porta può leggere i repository seguiti e gli eventi
   registrati, e chiedere una sincronizzazione con `POST /api/sync`, che usa il token
-  di chi ha avviato la dashboard. Il server non controlla le intestazioni `Host` e
-  `Origin`: serve la richiesta qualunque sia la pagina da cui arriva, e l'unico filtro
-  verso le pagine web aperte nel browser è quello che il browser stesso applica.
+  di chi ha avviato la dashboard. Verso le pagine web aperte nel browser, che possono
+  rivolgersi anche a `127.0.0.1`, il server controlla l'intestazione `Host` di ogni
+  richiesta: risponde solo se nomina `127.0.0.1`, `localhost` o `[::1]` con la porta
+  su cui ascolta, oppure un nome indicato con `--allow-host` (per esempio un alias o la
+  porta locale di un tunnel SSH); a ogni altra risponde 403 senza dati. Così una pagina
+  il cui nome di dominio viene fatto puntare a `127.0.0.1` (DNS rebinding) non legge lo
+  stato. `POST /api/sync` deve inoltre arrivare dalla pagina della dashboard stessa:
+  l'intestazione `Origin` deve essere `http://` seguito da uno di quei nomi, oppure,
+  se manca, `Sec-Fetch-Site: same-origin`; senza nessuna delle due la richiesta è
+  rifiutata con 403, quindi un modulo o un fetch da un altro sito non avvia la
+  sincronizzazione. Fino alla versione 2026.7 questi controlli non c'erano. Restano
+  possibili le richieste di un processo locale che imposta da sé quelle intestazioni:
+  il controllo protegge dalle pagine web, non dagli altri programmi della macchina.
 - **Il server MCP** (`releaseradar mcp`) comunica su stdio, cioè attraverso
   l'input e l'output standard del processo che lo avvia, e non apre porte di rete.
   Può usarlo solo il programma che lo ha avviato (il client MCP), con i permessi
@@ -97,6 +107,12 @@ ReleaseRadar contatta un solo servizio esterno:
   quelli con cui GitHub risponde al vecchio nome di un repository trasferito o
   rinominato, e al massimo cinque di fila; un redirect verso un altro host, o verso
   HTTP in chiaro, viene rifiutato senza fare la richiesta, quindi il token non lo segue.
+- Il nome `owner/repo` è controllato secondo le regole di GitHub prima di ogni
+  richiesta e prima di essere salvato: lettere, cifre e trattini per il proprietario,
+  lettere, cifre, `.`, `_` e `-` per il repository, mai `.` o `..`. Un nome come
+  `../users`, che nel percorso porterebbe la richiesta, token compreso, a un altro
+  endpoint di api.github.com, viene rifiutato senza contattare GitHub; ogni parte del
+  percorso è inoltre codificata (percent-encoding).
 - Le richieste portano lo User-Agent predefinito della libreria httpx
   (`python-httpx/<versione>`), non uno proprio di ReleaseRadar.
 - ReleaseRadar non scrive il token su disco: lo legge dalla variabile d'ambiente

@@ -7,6 +7,40 @@ the year is the generation shared by the five Radar and the count is this one's 
 
 ## [Unreleased]
 
+### Fixed
+
+- **The dashboard answers only to its own address, and a sync only to its own page.** Bound to
+  127.0.0.1, it still served any request that got there: a page whose domain is made to resolve to
+  127.0.0.1 after it loaded (DNS rebinding) could read `/api/state` under its own `Host`, and a
+  cross-site form or fetch got 202 from `POST /api/sync`, a sync with the token of whoever started
+  the dashboard; both reproduced on 2026-11-17 with `Host: evil.example:80` and
+  `Origin: https://evil.example`. docs/nis2-compliance.md listed it as an accepted gap. Every
+  request must now carry a `Host` of `127.0.0.1`, `localhost` or `[::1]` with the dashboard's port,
+  or a name given with the new `--allow-host NAME[:PORT]`; anything else, or no `Host`, is a 403
+  with no data. A POST must also carry an `Origin` of `http://` and one of those names, or, without
+  one, `Sec-Fetch-Site: same-origin`, which the page's *Sync now* does on its own; a client that
+  sends neither is refused. The document, README and SECURITY.md now say what is checked;
+  `tests/test_web.py` and `tests/test_nis2_evidence.py` ask a real server.
+
+- **A repository name can no longer take a request, token included, outside `/repos/<owner>/<repo>`,
+  and one bad name no longer stops every sync.** The name went into the URL as typed. httpx
+  normalises `/repos/../users` to `/users`, so `releaseradar track ../users` printed "Now tracking"
+  after GitHub answered 200 for an endpoint that is not a repository, and syncing `../..` asked
+  `/issues`, the token owner's own issues across GitHub; `psf/requests#x` and `psf/requests?` lost
+  the rest as a fragment or a query, checked psf/requests and were stored. The next `sync` walked
+  that repository object as a page of issues and died on a TypeError, which `sync_all` did not
+  catch: the CLI, the dashboard's poller and the MCP `sync_all` stopped syncing every repository. A
+  NUL in a name reached the MCP client as a bare "Error executing tool track_repo". All seen on
+  2026-11-17. The name is now checked against GitHub's rules (owner: letters, digits and hyphens,
+  at most 39, starting with a letter or a digit; repository: letters, digits, `.`, `_` and `-`, at
+  most 100, not `.` or `..`) by `track`, `untrack`, `sync` and `status` and by every MCP tool that
+  takes one, with a sentence saying what is wrong; the GitHub client builds every URL through one
+  function that checks the name again and percent-encodes each segment. A stored row that fails the
+  check is that repository's error in `sync`, and `untrack` still removes it by the name it was
+  stored under. Anything else that goes wrong with one repository in `sync_all` is reported for it,
+  by type, and the others still sync; a list endpoint that answers with something other than a list
+  is a GitHub error with a sentence, not a TypeError.
+
 ## [2026.7] - 2026-11-17
 
 ### Added
