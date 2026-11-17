@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, NoReturn
 
 import typer
 from rich import print as rprint
@@ -50,16 +50,18 @@ def _db_path() -> Path:
     return Path(path) if path else _db._DEFAULT_DB
 
 
-def _fail(message: str) -> None:
+def _fail(message: str) -> NoReturn:
     rprint(f"[red]Error:[/red] {message}")
     raise typer.Exit(1)
 
 
 def _split(repo: str) -> tuple[str, str]:
-    owner, sep, name = repo.strip().partition("/")
-    if not sep or not owner or not name or "/" in name:
-        _fail("repo must be in owner/repo format, e.g. torvalds/linux.")
-    return owner, name
+    """owner/repo by GitHub's rules, or exit 1 saying what is wrong with it."""
+    try:
+        return gh.split_repo(repo)
+    except gh.InvalidRepoName as exc:
+        # The refusal quotes the name, and `[/b]` in it is markup to rich.
+        _fail(escape(str(exc)))
 
 
 # ── version ──────────────────────────────────────────────────────────────────
@@ -110,12 +112,16 @@ def untrack(
     repo: Annotated[str, typer.Argument(help="owner/repo to stop tracking")],
 ) -> None:
     """Stop tracking a repository and remove all its data."""
-    owner, name = _split(repo)
     database = _db.open_db(_db_path())
-    if database.remove_repo(owner, name):
-        rprint(f"[yellow]✓[/yellow] Stopped tracking [bold]{owner}/{name}[/bold]")
-    else:
-        _fail(f"{owner}/{name} was not being tracked.")
+    # The name as stored, unchecked, first: a row an earlier version accepted
+    # under a name GitHub could not have given is removed by that name, which
+    # nothing else matches. Only then is the name checked, to say what is wrong.
+    owner, sep, name = repo.strip().partition("/")
+    if sep and database.remove_repo(owner, name):
+        rprint(f"[yellow]✓[/yellow] Stopped tracking [bold]{escape(owner)}/{escape(name)}[/bold]")
+        return
+    owner, name = _split(repo)
+    _fail(f"{owner}/{name} was not being tracked.")
 
 
 # ── list ──────────────────────────────────────────────────────────────────────

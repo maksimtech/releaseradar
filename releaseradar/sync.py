@@ -118,9 +118,11 @@ def sync_repo(owner: str, name: str, token: str | None = None,
     `on_warning` receives what was synced less than fully and why; `on_progress`
     receives a one-line account of how far the download has got, after every
     page, from whichever thread fetched it. Raises `NotTracked` for a repository
-    that was never `track`ed and `gh.GitHubError` for anything GitHub refused to
-    answer.
+    that was never `track`ed, `gh.InvalidRepoName` for a name GitHub could not
+    have given (nothing is asked of GitHub with it) and `gh.GitHubError` for
+    anything GitHub refused to answer.
     """
+    gh.check_repo_name(owner, name)
     database = _db.open_db(db_path or _db._DEFAULT_DB)
     repo = database.get_repo(owner, name)
     if repo is None:
@@ -222,7 +224,11 @@ def sync_all(token: str | None = None, db_path: Path | None = None, on_warning: 
     """Sync every tracked repo. Returns ({owner/name: [events]}, {owner/name: error}).
 
     One repository GitHub refuses does not stop the others; its message is
-    returned beside the events of the rest.
+    returned beside the events of the rest. Nor does anything else that goes
+    wrong with one repository: a name stored before names were checked
+    (`psf/requests#x` walked the repository object as a page of issues, and the
+    TypeError stopped every sync from the CLI, the dashboard and the MCP server
+    on 2026-11-17), or a failure nobody foresaw, which is reported by its type.
     """
     database = _db.open_db(db_path or _db._DEFAULT_DB)
     results: dict[str, list[dict]] = {}
@@ -236,4 +242,8 @@ def sync_all(token: str | None = None, db_path: Path | None = None, on_warning: 
                                      on_warning=on_warning, on_progress=on_progress)
         except gh.GitHubError as exc:
             errors[key] = str(exc)
+        except gh.InvalidRepoName as exc:
+            errors[key] = f"{exc} Tracked before names were checked: untrack it."
+        except Exception as exc:  # one repository's failure is that repository's, not the run's
+            errors[key] = f"unexpected {type(exc).__name__}: {exc}"
     return results, errors

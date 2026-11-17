@@ -146,7 +146,8 @@ From the Docker image, the same server with `-i`:
 Tools exposed: `track_repo`, `untrack_repo`, `list_repos`, `sync_repo`,
 `sync_all`, `repo_status`, `recent_events`. A repository GitHub refuses comes
 back as a tool error with the reason — not found, rate limit with its reset
-time, bad token — never as a traceback.
+time, bad token — never as a traceback. So does a name that is not
+`owner/repo` by GitHub's rules, and nothing is asked of GitHub with it.
 
 ## CLI reference
 
@@ -163,6 +164,11 @@ releaseradar notify --dry-run       Print without marking
 releaseradar web [--every N]        Local dashboard, syncing every N minutes (default 15)
 releaseradar mcp                    Run the MCP server on stdio
 ```
+
+`owner/repo` is checked against GitHub's own rules before anything is sent or
+stored: letters, digits and hyphens for the owner; letters, digits, `.`, `_` and
+`-` for the repository, never `.` or `..`. A repository that fails to sync, for
+whatever reason, is reported on its own line and the others still sync.
 
 ## What counts as an event
 

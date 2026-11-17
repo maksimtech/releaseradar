@@ -209,6 +209,20 @@ def test_what_the_requests_carry_is_what_the_document_says(doc):
     assert "segue i redirect solo verso `https://api.github.com`" in text
 
 
+def test_the_name_in_the_path_is_checked_before_any_request(doc, github):
+    """The repository's name is the one thing a user puts in the request path.
+    `../users` reached GET /users with the token until 2026-11-17; every URL is
+    built by one function now, which checks the name and encodes each segment."""
+    source = (PACKAGE / "github.py").read_text(encoding="utf-8")
+    assert source.count("_BASE}/repos") == 0
+    for owner, name in (("..", "users"), ("psf", "requests#x")):
+        with pytest.raises(gh.InvalidRepoName):
+            gh.repo_exists(owner, name)
+    assert github.calls.call_count == 0
+    assert "regole di GitHub" in prose(doc)
+    assert "`../users`" in prose(doc)
+
+
 TOKEN = "ghp_nis2EvidenceTokenThatMustNotReachTheDisk"
 
 

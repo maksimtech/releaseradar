@@ -97,6 +97,12 @@ ReleaseRadar contatta un solo servizio esterno:
   quelli con cui GitHub risponde al vecchio nome di un repository trasferito o
   rinominato, e al massimo cinque di fila; un redirect verso un altro host, o verso
   HTTP in chiaro, viene rifiutato senza fare la richiesta, quindi il token non lo segue.
+- Il nome `owner/repo` è controllato secondo le regole di GitHub prima di ogni
+  richiesta e prima di essere salvato: lettere, cifre e trattini per il proprietario,
+  lettere, cifre, `.`, `_` e `-` per il repository, mai `.` o `..`. Un nome come
+  `../users`, che nel percorso porterebbe la richiesta, token compreso, a un altro
+  endpoint di api.github.com, viene rifiutato senza contattare GitHub; ogni parte del
+  percorso è inoltre codificata (percent-encoding).
 - Le richieste portano lo User-Agent predefinito della libreria httpx
   (`python-httpx/<versione>`), non uno proprio di ReleaseRadar.
 - ReleaseRadar non scrive il token su disco: lo legge dalla variabile d'ambiente

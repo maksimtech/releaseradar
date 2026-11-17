@@ -13,6 +13,7 @@ from collections.abc import Callable
 from contextlib import suppress
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -41,6 +42,57 @@ class GitHubError(Exception):
     def __init__(self, message: str, status: int | None = None) -> None:
         super().__init__(message)
         self.status = status
+
+
+# ── repository names ─────────────────────────────────────────────────────────
+
+# GitHub's own rules. An owner, user or organisation, is letters, digits and
+# hyphens, starts with a letter or a digit and is at most 39 characters long; a
+# repository is letters, digits, `.`, `_` and `-`, at most 100, and neither `.`
+# nor `..`. Anything else is not a repository, and in a URL it is worse: httpx
+# normalises GET /repos/../users to GET /users and drops `#x` as a fragment, so
+# `track ../users` was answered 200 by an endpoint that is not a repository, with
+# the token on the request (found on 2026-11-17).
+_OWNER_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]{0,38}")
+_REPO_RE = re.compile(r"[A-Za-z0-9._-]{1,100}")
+_FORMAT = "expected owner/repo, e.g. torvalds/linux"
+
+
+class InvalidRepoName(ValueError):
+    """A name that is not owner/repo by GitHub's rules: nothing is asked of GitHub with it."""
+
+
+def _quoted(text: str) -> str:
+    """The name as typed, escapes and all, cut short if someone pasted a novel."""
+    return repr(text if len(text) <= 60 else text[:60] + "…")
+
+
+def check_repo_name(owner: str, repo: str) -> None:
+    """Raise `InvalidRepoName` unless `owner` and `repo` are names GitHub could have given."""
+    if not _OWNER_RE.fullmatch(owner):
+        raise InvalidRepoName(
+            f"{_quoted(owner)} is not a GitHub owner: letters, digits and hyphens, at most 39, "
+            f"starting with a letter or a digit; {_FORMAT}.")
+    if repo in (".", "..") or not _REPO_RE.fullmatch(repo):
+        raise InvalidRepoName(
+            f"{_quoted(repo)} is not a GitHub repository name: letters, digits, '.', '_' and '-', "
+            f"at most 100, and not '.' or '..'; {_FORMAT}.")
+
+
+def split_repo(text: str) -> tuple[str, str]:
+    """`owner/repo` as (owner, repo), checked; surrounding whitespace is not part of it."""
+    owner, sep, repo = text.strip().partition("/")
+    if not sep or not owner or not repo or "/" in repo:
+        raise InvalidRepoName(f"{_quoted(text.strip())} is not a repository: {_FORMAT}.")
+    check_repo_name(owner, repo)
+    return owner, repo
+
+
+def _repo_url(owner: str, repo: str, *path: str) -> str:
+    """https://api.github.com/repos/<owner>/<repo>[/<path>], for a checked name only,
+    every segment percent-encoded on top: the URL is built here, not by a format string."""
+    check_repo_name(owner, repo)
+    return "/".join([_BASE, "repos", *(quote(segment, safe="") for segment in (owner, repo, *path))])
 
 
 def _client(token: str | None = None) -> httpx.Client:
@@ -150,6 +202,12 @@ def _paginate(client: httpx.Client, url: str, subject: str, params: dict | None 
     resp = _get(client, url, subject, params={**(params or {}), "per_page": _PAGE})
     while True:
         batch = resp.json()
+        if not isinstance(batch, list):
+            # A list endpoint that answers with something else is not a page to
+            # walk: the keys of a repository object walked as issues were a
+            # TypeError a long way from here.
+            raise GitHubError(f"GitHub's answer for {subject} is not a list ({type(batch).__name__}) "
+                              "where a page of items was expected.", resp.status_code)
         if not batch:
             break
         pages += 1
@@ -202,7 +260,7 @@ def fetch_issues(owner: str, repo: str, token: str | None = None,
         params["since"] = since
     with _client(token) as c:
         # GitHub /issues returns PRs too; they are not counted and not returned.
-        return _paginate(c, f"{_BASE}/repos/{owner}/{repo}/issues", f"{owner}/{repo}", params,
+        return _paginate(c, _repo_url(owner, repo, "issues"), f"{owner}/{repo}", params,
                          on_page=on_page, keep=lambda i: "pull_request" not in i)
 
 
@@ -216,7 +274,7 @@ def fetch_pull_requests(owner: str, repo: str, token: str | None = None,
     """
     params: dict = {"state": state, "sort": "updated", "direction": "desc"}
     with _client(token) as c:
-        return _paginate(c, f"{_BASE}/repos/{owner}/{repo}/pulls", f"{owner}/{repo}", params,
+        return _paginate(c, _repo_url(owner, repo, "pulls"), f"{owner}/{repo}", params,
                          stop_when=_updated_before(since), on_page=on_page)
 
 
@@ -236,7 +294,7 @@ def fetch_releases(owner: str, repo: str, token: str | None = None,
     known = set(known_tags)
     with _client(token) as c:
         return _paginate(
-            c, f"{_BASE}/repos/{owner}/{repo}/releases", f"{owner}/{repo}", on_page=on_page,
+            c, _repo_url(owner, repo, "releases"), f"{owner}/{repo}", on_page=on_page,
             max_pages=1 if first_page_only else None,
             last_page_when=(lambda page: any(r.get("tag_name") in known for r in page)) if known else None,
             on_truncated=(lambda why: on_warning(f"{owner}/{repo}: releases read up to GitHub's limit — {why}"))
@@ -250,12 +308,13 @@ def open_items(owner: str, repo: str, token: str | None = None) -> int | None:
     GitHub will not describe (the sync itself will say why)."""
     with _client(token) as c:
         try:
-            resp = _follow(c, f"{_BASE}/repos/{owner}/{repo}", f"{owner}/{repo}")
+            resp = _follow(c, _repo_url(owner, repo), f"{owner}/{repo}")
         except (httpx.HTTPError, GitHubError):
             return None
     if resp.status_code != 200:
         return None
-    count = resp.json().get("open_issues_count")
+    record = resp.json()
+    count = record.get("open_issues_count") if isinstance(record, dict) else None
     return int(count) if isinstance(count, int) else None
 
 
@@ -267,7 +326,7 @@ def repo_exists(owner: str, repo: str, token: str | None = None) -> bool:
     """
     with _client(token) as c:
         try:
-            resp = _follow(c, f"{_BASE}/repos/{owner}/{repo}", f"{owner}/{repo}")
+            resp = _follow(c, _repo_url(owner, repo), f"{owner}/{repo}")
         except httpx.HTTPError as exc:
             raise GitHubError(f"cannot reach api.github.com: {exc}") from exc
     if resp.status_code == 200:

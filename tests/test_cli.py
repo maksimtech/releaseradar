@@ -6,6 +6,7 @@ import json
 import re
 
 import httpx
+import pytest
 from typer.testing import CliRunner
 
 from releaseradar import db as _db
@@ -57,6 +58,28 @@ class TestTrack:
         assert "rate limit" in result.output
         assert "Traceback" not in result.output
 
+    @pytest.mark.parametrize("name", ["../users", "../..", "psf/requests#x", "psf/requests?", "psf/re\x00quests"])
+    def test_track_refuses_a_name_that_leaves_the_repository_path(self, db_path, github, name):
+        """`track ../users` printed "Now tracking": GET /repos/../users is GET /users
+        once httpx has normalised the path, and that answers 200 — with the token,
+        if there is one. `psf/requests#x` lost its fragment and checked psf/requests
+        (both seen live on 2026-11-17). Nothing is asked of GitHub now."""
+        github.get(f"{API}/users").mock(return_value=httpx.Response(200, json=[{"login": "mojombo"}]))
+        github.get(f"{API}/repos/psf/requests").mock(return_value=replay("gh_codecov-mcp_repo.json"))
+        result = runner.invoke(app, ["track", name])
+        assert result.exit_code == 1
+        assert "owner/repo" in result.output
+        assert "Now tracking" not in result.output
+        assert github.calls.call_count == 0
+        assert _db.open_db(db_path).list_repos() == []
+
+    def test_a_refused_name_is_printed_as_text_not_markup(self, db_path, github):
+        """The refusal quotes the name, and rich would read `[/b]` in it as a closing tag."""
+        result = runner.invoke(app, ["track", "a[/b]/c"])
+        assert result.exit_code == 1
+        assert "[/b]" in result.output
+        assert isinstance(result.exception, SystemExit)
+
 
 class TestUntrack:
     def test_untrack_not_tracked(self, db_path):
@@ -69,6 +92,19 @@ class TestUntrack:
         result = runner.invoke(app, ["untrack", "maksimtech/codecov-mcp"])
         assert result.exit_code == 0
         assert _db.open_db(db_path).list_repos() == []
+
+    def test_a_name_tracked_before_names_were_checked_can_still_be_untracked(self, db_path):
+        """`psf/requests#x` is refused everywhere else now; the row an earlier
+        version stored has to be removable, and nothing else matches it."""
+        tracked(db_path, "psf", "requests#x")
+        result = runner.invoke(app, ["untrack", "psf/requests#x"])
+        assert result.exit_code == 0
+        assert _db.open_db(db_path).list_repos() == []
+
+    def test_untrack_of_a_malformed_name_nobody_tracked_says_what_is_wrong(self, db_path):
+        result = runner.invoke(app, ["untrack", "../.."])
+        assert result.exit_code == 1
+        assert "owner/repo" in result.output
 
 
 class TestList:
@@ -159,6 +195,21 @@ class TestSync:
         result = runner.invoke(app, ["sync"])
         assert result.exit_code == 1
         assert "does-not-exist-xyz" in result.output and "not found" in result.output
+        assert database.repo_summary("maksimtech", "codecov-mcp")["last_synced_at"] is not None
+
+    def test_sync_all_reports_a_malformed_tracked_name_and_syncs_the_rest(self, db_path, github):
+        """A row stored before names were checked is that row's error line, not a
+        TypeError that stops every repository (seen live on 2026-11-17)."""
+        github.get(f"{API}/repos/psf/requests").mock(return_value=replay("gh_codecov-mcp_repo.json"))
+        github.get(f"{API}/repos/maksimtech/codecov-mcp").mock(return_value=replay("gh_codecov-mcp_repo.json"))
+        route_repo(github, "maksimtech", "codecov-mcp",
+                   "gh_codecov-mcp_issues_all.json", "gh_codecov-mcp_pulls_all.json", "gh_codecov-mcp_releases.json")
+        database = tracked(db_path)
+        database.add_repo("psf", "requests#x")
+        result = runner.invoke(app, ["sync"])
+        assert result.exit_code == 1
+        assert "psf/requests#x" in result.output and "untrack" in result.output
+        assert isinstance(result.exception, SystemExit)
         assert database.repo_summary("maksimtech", "codecov-mcp")["last_synced_at"] is not None
 
 

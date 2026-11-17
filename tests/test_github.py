@@ -116,6 +116,63 @@ class TestRepoExists:
         assert route.calls.last.request.headers["Authorization"] == "Bearer ghp_example"
 
 
+# ── repository names ──────────────────────────────────────────────────────────
+
+# Names that leave /repos/<owner>/<repo> once httpx has normalised the path, or
+# that GitHub would never have given a repository. `../users` was tracked on
+# 2026-11-17: GET /repos/../users is GET /users, which answers 200.
+NOT_A_REPOSITORY = [
+    "../users", "../..", "./x", "psf/.", "psf/..", "psf/requests#x", "psf/requests?", "psf/requests?a=b",
+    "psf/re quests", "psf/re\x00quests", "psf/re\nquests", "psf/requests%2F..", "-psf/requests",
+    "psf/requests/issues", "a" * 40 + "/x", "x/" + "a" * 101, "noowner", "/", "psf/", "/requests",
+]
+
+
+class TestRepositoryNames:
+    @pytest.mark.parametrize("text", [
+        "torvalds/linux", "home-assistant/core", "psf/requests", "maksimtech/.github", "vuejs/vue.js",
+        "a/b", "u/a_b-c.d", "a" * 39 + "/" + "b" * 100,
+    ])
+    def test_github_names_are_accepted(self, text):
+        assert gh.split_repo(text) == tuple(text.split("/"))
+
+    def test_surrounding_whitespace_is_not_part_of_the_name(self):
+        assert gh.split_repo("  psf/requests \n") == ("psf", "requests")
+
+    @pytest.mark.parametrize("text", NOT_A_REPOSITORY)
+    def test_anything_else_is_refused_with_a_sentence(self, text):
+        with pytest.raises(gh.InvalidRepoName, match="owner/repo"):
+            gh.split_repo(text)
+
+    @pytest.mark.parametrize("owner, name", [("..", "users"), ("..", ".."), ("psf", "requests#x"), ("psf", "a\x00b")])
+    def test_no_request_leaves_the_repository_path(self, github, owner, name):
+        """The client refuses such a name itself, before anything is sent: the
+        replay router rejects any request, so one sent would fail differently."""
+        calls = [
+            lambda: gh.repo_exists(owner, name),
+            lambda: gh.fetch_issues(owner, name),
+            lambda: gh.fetch_pull_requests(owner, name),
+            lambda: gh.fetch_releases(owner, name),
+            lambda: gh.open_items(owner, name),
+        ]
+        for call in calls:
+            with pytest.raises(gh.InvalidRepoName):
+                call()
+        assert github.calls.call_count == 0
+
+    def test_a_page_that_is_not_a_list_is_a_github_error(self, github):
+        """`/repos/psf/requests#x/issues` was sent as `/repos/psf/requests`, and the
+        repository object came back where a page of issues belongs: walked as one,
+        its keys became issues and the sync died on a TypeError."""
+        github.get(f"{API}/repos/psf/requests/issues").mock(return_value=replay("gh_codecov-mcp_repo.json"))
+        with pytest.raises(gh.GitHubError, match="not a list"):
+            gh.fetch_issues("psf", "requests")
+
+    def test_a_repository_record_that_is_not_an_object_has_no_size(self, github):
+        github.get(f"{API}/repos/psf/requests").mock(return_value=empty_page())
+        assert gh.open_items("psf", "requests") is None
+
+
 # ── errors with a sentence in them ────────────────────────────────────────────
 
 RATE_LIMITED = httpx.Response(
