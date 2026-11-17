@@ -139,10 +139,64 @@ def _action_steps():
 def test_the_installer_is_a_pinned_release_checked_before_it_runs():
     install = next(s for s in _action_steps() if "install-safe-chain.sh" in s.get("run", ""))
     run = install["run"]
-    assert re.search(r"/releases/download/\$\{?SAFE_CHAIN_VERSION\}?/install-safe-chain\.sh", run), run
-    assert re.fullmatch(r"\d+\.\d+\.\d+", str(install["env"]["SAFE_CHAIN_VERSION"])), "a version, not latest"
+    url = re.search(r"/releases/download/\$\{?(\w+)\}?/install-safe-chain\.sh", run)
+    assert url, run
+    assert re.fullmatch(r"\d+\.\d+\.\d+", str(install["env"][url.group(1)])), "a version, not latest"
     assert re.fullmatch(r"[0-9a-f]{64}", str(install["env"]["INSTALLER_SHA256"]))
     assert run.index("sha256sum -c") < run.index("--ci"), "the script runs only once its hash matches"
+
+
+def test_the_action_sets_no_variable_the_installer_reads():
+    """The pilot named its version SAFE_CHAIN_VERSION, which is the installer's own
+    deprecated pin. With it set, install-safe-chain.sh warns in every job and, as a
+    "legacy" install, downloads the glibc build (safe-chain-linux-x64) instead of the
+    static one its release otherwise uses. The pin belongs in the URL alone."""
+    for step in _action_steps():
+        assert "SAFE_CHAIN_VERSION" not in (step.get("env") or {}), step.get("name")
+        assert not re.search(r"\bSAFE_CHAIN_VERSION=", _code(step.get("run", ""))), step.get("name")
+
+
+# ─── what the shims cannot see ──────────────────────────────────────────────
+
+def test_no_build_runs_in_an_isolation_safe_chain_cannot_see():
+    """`python -m build` installs the build backend into an isolated environment of
+    its own, and the `python` shim passes everything but `-m pip` straight to the
+    interpreter. Measured on 2026-11-17 in WSL with a project whose only build
+    requirement was Aikido's canary: `pip install -e .` had it blocked (pip's own
+    isolated build runs under the shim's proxy), `python -m build` fetched it from
+    PyPI unchecked. So the backend is installed by pip, through the shim, and the
+    build runs without isolation."""
+    for path in WORKFLOWS.glob("*.yml"):
+        for line in _code(path.read_text(encoding="utf-8")).splitlines():
+            if re.search(r"\bpython3?\s+-m\s+build\b", line):
+                assert re.search(r"\s(--no-isolation|-n)(\s|$)", line), f"{path.name}: {line.strip()}"
+
+
+def test_the_backend_a_build_needs_is_installed_through_the_shim_first():
+    job = yaml.safe_load((WORKFLOWS / "publish.yml").read_text(encoding="utf-8"))["jobs"]["build-and-publish"]
+    runs = [_code(s.get("run", "")) for s in job["steps"]]
+    build = next(i for i, r in enumerate(runs) if re.search(r"\bpython3?\s+-m\s+build\b", r))
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    backend = re.search(r'requires\s*=\s*\["([A-Za-z0-9_.-]+)', pyproject).group(1)
+    installs = [i for i, r in enumerate(runs) if BY_NAME.search(r) and backend in r]
+    assert installs and installs[0] < build, f"{backend} is not installed by pip before the build"
+
+
+def test_the_evidence_job_sets_safe_chain_up_from_its_own_commit():
+    """Release Evidence can be dispatched for any tag, and it checks that tag out.
+    Tags cut before Safe Chain have no .github/actions/safe-chain, so the action has
+    to come from the workflow's own checkout, before the tag replaces it; the shims
+    live in $HOME and stay on PATH after the second checkout."""
+    steps = yaml.safe_load((WORKFLOWS / "sbom.yml").read_text(encoding="utf-8"))["jobs"]["evidence"]["steps"]
+    uses = [s.get("uses", "") for s in steps]
+    checkouts = [i for i, u in enumerate(uses) if u.startswith("actions/checkout")]
+    guard = uses.index(SAFE_CHAIN)
+    first_install = next(i for i, s in enumerate(steps) if _installs(s))
+
+    own = [i for i in checkouts if "ref" not in (steps[i].get("with") or {})]
+    tag = [i for i in checkouts if "TAG" in str((steps[i].get("with") or {}).get("ref", ""))]
+    assert own and own[0] < guard, "the action is set up from the workflow's own commit"
+    assert tag and guard < tag[0] < first_install, "the tag is checked out after Safe Chain, before installing"
 
 
 def test_the_action_proves_the_blocking_instead_of_trusting_the_installer():
