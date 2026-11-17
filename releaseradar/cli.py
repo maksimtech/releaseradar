@@ -16,7 +16,7 @@ from rich.table import Table
 from . import __version__
 from . import db as _db
 from . import github as gh
-from .sync import NotTracked, sync_all, sync_repo
+from .sync import UNTRACK_INVALID, NotTracked, name_is_valid, shown_repo, sync_all, sync_repo, untrack_invalid
 
 app = typer.Typer(
     name="releaseradar",
@@ -55,13 +55,13 @@ def _fail(message: str) -> NoReturn:
     raise typer.Exit(1)
 
 
-def _split(repo: str) -> tuple[str, str]:
+def _split(repo: str, hint: str = "") -> tuple[str, str]:
     """owner/repo by GitHub's rules, or exit 1 saying what is wrong with it."""
     try:
         return gh.split_repo(repo)
     except gh.InvalidRepoName as exc:
         # The refusal quotes the name, and `[/b]` in it is markup to rich.
-        _fail(escape(str(exc)))
+        _fail(escape(f"{exc} {hint}".rstrip()))
 
 
 # ── version ──────────────────────────────────────────────────────────────────
@@ -109,19 +109,39 @@ def track(
 
 @app.command()
 def untrack(
-    repo: Annotated[str, typer.Argument(help="owner/repo to stop tracking")],
+    repo: Annotated[str | None, typer.Argument(help="owner/repo to stop tracking")] = None,
+    invalid: Annotated[
+        bool,
+        typer.Option("--invalid", help="Remove every stored repository whose name GitHub could not have given"),
+    ] = False,
 ) -> None:
     """Stop tracking a repository and remove all its data."""
-    database = _db.open_db(_db_path())
-    # The name as stored, unchecked, first: a row an earlier version accepted
-    # under a name GitHub could not have given is removed by that name, which
-    # nothing else matches. Only then is the name checked, to say what is wrong.
-    owner, sep, name = repo.strip().partition("/")
-    if sep and database.remove_repo(owner, name):
-        rprint(f"[yellow]✓[/yellow] Stopped tracking [bold]{escape(owner)}/{escape(name)}[/bold]")
+    if invalid and repo:
+        _fail("give owner/repo or --invalid, not both.")
+    if invalid:
+        _untrack_invalid()
         return
-    owner, name = _split(repo)
-    _fail(f"{owner}/{name} was not being tracked.")
+    if not repo:
+        _fail("give the owner/repo to stop tracking, or --invalid for the stored names GitHub could not have given.")
+    owner, name = _split(repo, hint=f"A name an earlier version stored like this is removed with `{UNTRACK_INVALID}`.")
+    if not _db.open_db(_db_path()).remove_repo(owner, name):
+        _fail(f"{owner}/{name} was not being tracked.")
+    rprint(f"[yellow]✓[/yellow] Stopped tracking [bold]{owner}/{name}[/bold]")
+
+
+def _untrack_invalid() -> None:
+    """Earlier versions stored names as typed, `../..` and `psf/requests#x` among
+    them, and a NUL or a newline cannot be typed back to remove them by name.
+    They are found by the name rules instead, and each one removed is printed
+    as its repr, so what was in it is visible and none of it is markup."""
+    removed = untrack_invalid(_db_path())
+    if not removed:
+        rprint("[dim]No invalid repositories: every stored name is one GitHub could have given.[/dim]")
+        return
+    for shown in removed:
+        rprint(f"[yellow]✓[/yellow] Removed {escape(shown)} and all its data")
+    noun = "repository" if len(removed) == 1 else "repositories"
+    rprint(f"Removed {len(removed)} {noun} whose names GitHub could not have given.")
 
 
 # ── list ──────────────────────────────────────────────────────────────────────
@@ -142,18 +162,28 @@ def list_repos() -> None:
     table.add_column("Latest release")
     table.add_column("Last sync")
 
+    invalid = 0
     for row in repos:
         summary = database.repo_summary(row["owner"], row["name"])
         latest = summary.get("latest_release")
         synced = row["last_synced_at"]
+        name = escape(shown_repo(row["owner"], row["name"]))
+        if not name_is_valid(row["owner"], row["name"]):
+            invalid += 1
+            name += " [red](invalid name)[/red]"
         table.add_row(
-            f"{row['owner']}/{row['name']}",
+            name,
             str(summary.get("open_issues", "—")),
             str(summary.get("open_prs", "—")),
             latest["tag_name"] if latest else "[dim]none yet[/dim]",
             synced[:16].replace("T", " ") if synced else "[dim]never[/dim]",
         )
     console.print(table)
+    if invalid:
+        many = invalid > 1
+        rprint(f"[yellow]![/yellow] {invalid} stored {'names are not names' if many else 'name is not a name'} "
+               f"GitHub could have given and cannot be synced; remove {'them' if many else 'it'} with "
+               f"[bold]{UNTRACK_INVALID}[/bold].")
 
 
 # ── sync ──────────────────────────────────────────────────────────────────────
@@ -188,7 +218,7 @@ def sync(
                                    on_progress=lambda line: status.update(escape(line)))
     _print_warnings(warnings)
     for key, message in errors.items():
-        rprint(f"[red]✗ {key}:[/red] {message}")
+        rprint(f"[red]✗ {escape(key)}:[/red] {escape(message)}")
     # "Nothing new" is about the repositories that were synced; with none of them
     # it would be said about the failures.
     if results:

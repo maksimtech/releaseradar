@@ -24,6 +24,47 @@ class NotTracked(ValueError):
     """A repository nobody asked to track."""
 
 
+# What to do about a row an earlier version stored under a name GitHub could not
+# have given: no command that checks its name can reach it, and its exact bytes
+# (a NUL, a newline) may not be typeable at all.
+UNTRACK_INVALID = "releaseradar untrack --invalid"
+
+
+def name_is_valid(owner: str, name: str) -> bool:
+    try:
+        gh.check_repo_name(owner, name)
+    except gh.InvalidRepoName:
+        return False
+    return True
+
+
+def shown_repo(owner: str, name: str) -> str:
+    """`owner/name` as printed: as it is when GitHub could have given it, its repr
+    when not, so a NUL or a newline is visible and markup is only text."""
+    key = f"{owner}/{name}"
+    return key if name_is_valid(owner, name) else repr(key)
+
+
+def invalid_repos(database: _db._DB) -> list[tuple[str, str]]:
+    """(owner, name) of the stored rows whose names GitHub could not have given, in `list` order."""
+    stored = [(str(row["owner"]), str(row["name"])) for row in database.list_repos()]
+    return [(owner, name) for owner, name in stored if not name_is_valid(owner, name)]
+
+
+def untrack_invalid(db_path: Path) -> list[str]:
+    """Remove every stored row whose name GitHub could not have given, with its
+    issues, pull requests, releases and events; return them as `shown_repo` does.
+
+    Only such rows: nothing a checked name can reach is touched, and the names
+    deleted by are the stored ones, never typed."""
+    database = _db.open_db(db_path)
+    removed: list[str] = []
+    for owner, name in invalid_repos(database):
+        if database.remove_repo(owner, name):
+            removed.append(shown_repo(owner, name))
+    return removed
+
+
 def _now() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -234,7 +275,7 @@ def sync_all(token: str | None = None, db_path: Path | None = None, on_warning: 
     results: dict[str, list[dict]] = {}
     errors: dict[str, str] = {}
     for row in database.list_repos():
-        key = f"{row['owner']}/{row['name']}"
+        key = shown_repo(row["owner"], row["name"])
         try:
             if on_progress is not None:
                 on_progress(f"{key}: asking GitHub what changed…")
@@ -243,7 +284,7 @@ def sync_all(token: str | None = None, db_path: Path | None = None, on_warning: 
         except gh.GitHubError as exc:
             errors[key] = str(exc)
         except gh.InvalidRepoName as exc:
-            errors[key] = f"{exc} Tracked before names were checked: untrack it."
+            errors[key] = f"{exc} Stored by an earlier version; remove it with `{UNTRACK_INVALID}`."
         except Exception as exc:  # one repository's failure is that repository's, not the run's
             errors[key] = f"unexpected {type(exc).__name__}: {exc}"
     return results, errors

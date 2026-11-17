@@ -18,6 +18,12 @@ from tests.test_github import RATE_LIMITED
 runner = CliRunner(env={"COLUMNS": "200"})
 
 
+def flat(output: str) -> str:
+    """The output as one line, without colour: rich wraps a long message at the
+    terminal's width, and on a CI runner it paints it."""
+    return " ".join(re.sub(r"\x1b\[[0-9;]*m", "", output).split())
+
+
 def tracked(db_path, owner="maksimtech", name="codecov-mcp") -> _db._DB:
     database = _db.open_db(db_path)
     database.add_repo(owner, name)
@@ -93,18 +99,68 @@ class TestUntrack:
         assert result.exit_code == 0
         assert _db.open_db(db_path).list_repos() == []
 
-    def test_a_name_tracked_before_names_were_checked_can_still_be_untracked(self, db_path):
-        """`psf/requests#x` is refused everywhere else now; the row an earlier
-        version stored has to be removable, and nothing else matches it."""
+    def test_untrack_checks_the_name_like_every_other_command(self, db_path):
+        """Removing by the name as typed, unchecked, was the one input path the
+        name rules did not cover; a row an earlier version stored under such a
+        name is what `untrack --invalid` is for, and the refusal says so."""
         tracked(db_path, "psf", "requests#x")
         result = runner.invoke(app, ["untrack", "psf/requests#x"])
-        assert result.exit_code == 0
-        assert _db.open_db(db_path).list_repos() == []
+        assert result.exit_code == 1
+        assert "owner/repo" in result.output
+        assert "releaseradar untrack --invalid" in flat(result.output)
+        assert [(r["owner"], r["name"]) for r in _db.open_db(db_path).list_repos()] == [("psf", "requests#x")]
 
     def test_untrack_of_a_malformed_name_nobody_tracked_says_what_is_wrong(self, db_path):
         result = runner.invoke(app, ["untrack", "../.."])
         assert result.exit_code == 1
         assert "owner/repo" in result.output
+
+    def test_untrack_needs_a_repository_or_invalid(self, db_path):
+        result = runner.invoke(app, ["untrack"])
+        assert result.exit_code == 1
+        assert "--invalid" in result.output
+
+    def test_invalid_and_a_repository_are_not_asked_for_together(self, db_path):
+        tracked(db_path)
+        result = runner.invoke(app, ["untrack", "--invalid", "maksimtech/codecov-mcp"])
+        assert result.exit_code == 1
+        assert "not both" in result.output
+        assert len(_db.open_db(db_path).list_repos()) == 1
+
+
+def planted(db_path) -> _db._DB:
+    """One valid repository and every kind of stored name an earlier version
+    accepted: a NUL, a newline, a fragment, `..`, and rich markup."""
+    database = tracked(db_path)
+    for owner, name in BAD_ROWS:
+        repo_id = database.add_repo(owner, name)
+        database.add_event(repo_id, "issue_opened", ref_number=1)
+    return database
+
+
+BAD_ROWS = [("psf", "re\x00quests"), ("psf", "re\nquests"), ("psf", "requests#x"), ("..", ".."), ("a[/]", "b")]
+# As they are printed: repr, so a NUL or a newline is visible and markup is text.
+BAD_SHOWN = ["'psf/re\\x00quests'", "'psf/re\\nquests'", "'psf/requests#x'", "'../..'", "'a[/]/b'"]
+
+
+class TestUntrackInvalid:
+    def test_every_invalid_row_goes_with_its_data_and_the_valid_one_stays(self, db_path):
+        database = planted(db_path)
+        result = runner.invoke(app, ["untrack", "--invalid"])
+        assert result.exit_code == 0, result.output
+        assert [(r["owner"], r["name"]) for r in database.list_repos()] == [("maksimtech", "codecov-mcp")]
+        assert database.recent_events(50) == []
+        for shown in BAD_SHOWN:
+            assert shown in result.output
+        assert "\x00" not in result.output
+        assert "5" in result.output
+
+    def test_nothing_invalid_is_said_and_is_not_an_error(self, db_path):
+        tracked(db_path)
+        result = runner.invoke(app, ["untrack", "--invalid"])
+        assert result.exit_code == 0
+        assert "No invalid repositories" in result.output
+        assert len(_db.open_db(db_path).list_repos()) == 1
 
 
 class TestList:
@@ -119,6 +175,17 @@ class TestList:
         assert result.exit_code == 0
         assert "codecov-mcp" in result.output
         assert "never" in result.output  # not synced yet
+
+    def test_invalid_rows_are_shown_escaped_and_marked_with_the_way_out(self, db_path):
+        planted(db_path)
+        result = CliRunner(env={"COLUMNS": "300"}).invoke(app, ["list"])
+        assert result.exit_code == 0, result.output
+        for shown in BAD_SHOWN:
+            assert shown in result.output
+        assert "\x00" not in result.output
+        assert "invalid name" in result.output
+        assert "releaseradar untrack --invalid" in flat(result.output)
+        assert "maksimtech/codecov-mcp" in result.output
 
 
 class TestStatus:
@@ -208,8 +275,23 @@ class TestSync:
         database.add_repo("psf", "requests#x")
         result = runner.invoke(app, ["sync"])
         assert result.exit_code == 1
-        assert "psf/requests#x" in result.output and "untrack" in result.output
+        assert "psf/requests#x" in result.output and "releaseradar untrack --invalid" in flat(result.output)
         assert isinstance(result.exception, SystemExit)
+        assert database.repo_summary("maksimtech", "codecov-mcp")["last_synced_at"] is not None
+
+    def test_sync_all_prints_every_kind_of_invalid_name_as_text(self, db_path, github):
+        """A NUL, a newline or `[/]` in a stored name reached the error line as it
+        was: rich read `[/]` as a closing tag and stopped the output."""
+        github.get(f"{API}/repos/maksimtech/codecov-mcp").mock(return_value=replay("gh_codecov-mcp_repo.json"))
+        route_repo(github, "maksimtech", "codecov-mcp",
+                   "gh_codecov-mcp_issues_all.json", "gh_codecov-mcp_pulls_all.json", "gh_codecov-mcp_releases.json")
+        database = planted(db_path)
+        result = CliRunner(env={"COLUMNS": "300"}).invoke(app, ["sync"])
+        assert result.exit_code == 1, result.output
+        assert isinstance(result.exception, SystemExit)
+        for shown in BAD_SHOWN:
+            assert shown in result.output
+        assert "\x00" not in result.output
         assert database.repo_summary("maksimtech", "codecov-mcp")["last_synced_at"] is not None
 
 

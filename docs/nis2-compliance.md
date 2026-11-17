@@ -153,8 +153,9 @@ nel volume `/home/releaseradar/.releaseradar`. Contiene:
 
 Non salva gli autori di issue, pull request e release; titoli e note di rilascio sono
 salvati così come GitHub li restituisce. Il file non è cifrato e ReleaseRadar non ne
-restringe i permessi. `untrack` cancella dal database le righe di un repository; per
-eliminare ogni dato si cancella il file.
+restringe i permessi. `untrack` cancella dal database le righe di un repository;
+`untrack --invalid` quelle dei repository salvati dalle versioni fino alla 2026.7 con un
+nome che GitHub non può avere dato; per eliminare ogni dato si cancella il file.
 
 ## 4. Come arrivano gli aggiornamenti, e in quanto tempo
 

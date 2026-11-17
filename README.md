@@ -160,6 +160,7 @@ time, bad token — never as a traceback. So does a name that is not
 ```
 releaseradar track <owner/repo>     Start tracking a repository
 releaseradar untrack <owner/repo>   Stop tracking and remove all its data
+releaseradar untrack --invalid      Remove every stored name GitHub could not have given
 releaseradar list                   List tracked repos with summary
 releaseradar sync [owner/repo]      Fetch what changed since the last sync
 releaseradar status <owner/repo>    Open issues/PRs, latest release, last sync
@@ -175,6 +176,15 @@ releaseradar mcp                    Run the MCP server on stdio
 stored: letters, digits and hyphens for the owner; letters, digits, `.`, `_` and
 `-` for the repository, never `.` or `..`. A repository that fails to sync, for
 whatever reason, is reported on its own line and the others still sync.
+
+Versions up to 2026.7 stored names as typed, `../users` or `psf/requests#x`
+among them. Such a row cannot be synced, and no command that checks its name
+reaches it — a NUL or a newline in it could not even be typed back. `list` and
+`sync` show it as its repr (`'psf/re\x00quests'`), marked, and
+`releaseradar untrack --invalid` removes every one of them with its data,
+printing each. The MCP server marks them in `list_repos` and points to that
+command; it has no tool of its own for it, so rows are never deleted in bulk on
+a model's word.
 
 ## What counts as an event
 

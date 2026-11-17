@@ -9,6 +9,21 @@ the year is the generation shared by the five Radar and the count is this one's 
 
 ### Fixed
 
+- **`untrack` checks the name like every other command, and `untrack --invalid` removes the rows
+  earlier versions stored under names GitHub could not have given.** Until now `untrack`
+  (CLI and MCP `untrack_repo`) removed a row by the name exactly as typed, unchecked, so that such
+  rows could be removed at all: the one input path the name rules did not cover, and no help for a
+  row with a NUL or a newline in it, which cannot be typed back. `untrack owner/repo` now refuses an
+  invalid name like `track` and `sync` do, and says to use `releaseradar untrack --invalid`, which
+  takes no name: it finds every stored row whose owner or name fails the rules, removes it with its
+  issues, pull requests, releases and events, and prints each one as its repr, so a NUL, a newline
+  or `[/]` is visible and harmless; with none it says so. Exit 0 either way. `list`, the MCP
+  `list_repos` (`invalid_name`, and a `hint`) and the dashboard mark such rows the same way and
+  point to the command, and `sync` names them by their repr in its error lines, escaped, where a
+  `[/]` in a stored name used to stop the output with a MarkupError. The MCP server has no tool for
+  the cleanup: it deletes only rows no valid command can reach, but deleting in bulk is left to a
+  person at the command line, and its errors say which command.
+
 - **The dashboard answers only to its own address, and a sync only to its own page.** Bound to
   127.0.0.1, it still served any request that got there: a page whose domain is made to resolve to
   127.0.0.1 after it loaded (DNS rebinding) could read `/api/state` under its own `Host`, and a
@@ -36,8 +51,8 @@ the year is the generation shared by the five Radar and the count is this one's 
   most 100, not `.` or `..`) by `track`, `untrack`, `sync` and `status` and by every MCP tool that
   takes one, with a sentence saying what is wrong; the GitHub client builds every URL through one
   function that checks the name again and percent-encodes each segment. A stored row that fails the
-  check is that repository's error in `sync`, and `untrack` still removes it by the name it was
-  stored under. Anything else that goes wrong with one repository in `sync_all` is reported for it,
+  check is that repository's error in `sync`, and `untrack --invalid` removes it (see above).
+  Anything else that goes wrong with one repository in `sync_all` is reported for it,
   by type, and the others still sync; a list endpoint that answers with something other than a list
   is a GitHub error with a sentence, not a TypeError.
 
