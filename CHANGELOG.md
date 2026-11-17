@@ -71,6 +71,12 @@ the year is the generation shared by the five Radar and the count is this one's 
   reports the same high findings as the published 3.12 image, all in Debian packages, none in
   Python.
 
+- **The acl exception is reviewed, and runs to 2027-01-31.** CVE-2026-54369 was due on 2026-11-30,
+  after which Security Posture would have failed on its own. Read again on 2026-11-17: still no-dsa
+  for trixie (Debian bug 1141110), acl 2.4.0 only in forky and sid, nothing in
+  trixie-proposed-updates, and the last point release still 13.7 of 2026-09-12. The new date falls
+  after the 13.8 point release that is due.
+
 ### Fixed
 
 - **Security Posture reads every page of alerts.** The code scanning API returns at most a hundred
@@ -97,6 +103,12 @@ the year is the generation shared by the five Radar and the count is this one's 
   `docker-scout.yml` now follows the image workflow (`workflow_run`, successful runs only) and
   `security-posture.yml` follows the scan. `docs/nis2-compliance.md` already said the scan ran on every image build; now it does, and `tests/test_scan_after_publish.py`
   holds them together.
+
+- **Security Posture gives no verdict on a failed Docker Scout scan.** It ran after every Scout run,
+  failed ones included. On 2026-11-16 exeradar's Scout stopped on a 403 before scanning, and the
+  gate went green on the previous scan's alerts. It now runs on a `workflow_run` only when the scan
+  succeeded, as Scout itself does after the image workflow. Push, pull request, schedule and manual
+  runs are unchanged.
 
 ### Security
 
