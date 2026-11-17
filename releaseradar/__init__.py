@@ -1,3 +1,3 @@
 """ReleaseRadar — GitHub release lifecycle tracker."""
 
-__version__ = "2026.6"
+__version__ = "2026.7"
