@@ -11,7 +11,7 @@ import pytest
 
 from releaseradar import db as _db
 from releaseradar import github as gh
-from releaseradar.sync import NotTracked, sync_all, sync_repo
+from releaseradar.sync import NotTracked, invalid_repos, shown_repo, sync_all, sync_repo, untrack_invalid
 from tests.conftest import API, empty_page, recorded, replay, route_repo
 
 
@@ -228,8 +228,10 @@ class TestSyncAll:
         results, errors = sync_all(db_path=db_path)
 
         assert results == {"maksimtech/cookieradar": []}
-        assert sorted(errors) == ["../..", "psf/requests#x"]
-        assert "untrack" in errors["psf/requests#x"]
+        # Named as `list` and `untrack --invalid` show them: repr, so nothing in
+        # the name is taken for a control character or markup where it is printed.
+        assert sorted(errors) == ["'../..'", "'psf/requests#x'"]
+        assert "releaseradar untrack --invalid" in errors["'psf/requests#x'"]
         assert github.calls.call_count == 3  # the three walks of cookieradar, and nothing else
 
     def test_an_unexpected_failure_in_one_repository_does_not_stop_the_rest(self, db_path, github):
@@ -255,6 +257,39 @@ class TestSyncAll:
         with pytest.raises(gh.InvalidRepoName):
             sync_repo("..", "users", db_path=db_path)
         assert github.calls.call_count == 0
+
+
+class TestInvalidStoredNames:
+    """Rows an earlier version stored under names GitHub could not have given:
+    no command that checks its name can reach them, so they are found by name
+    and removed together, without anyone typing their exact bytes."""
+
+    def test_a_valid_name_is_shown_as_it_is_and_an_invalid_one_as_its_repr(self):
+        assert shown_repo("psf", "requests") == "psf/requests"
+        assert shown_repo("psf", "re\x00quests") == "'psf/re\\x00quests'"
+        assert shown_repo("a[/]", "b") == "'a[/]/b'"
+
+    def test_only_the_invalid_rows_are_found(self, db_path):
+        database = track(db_path, "psf", "requests")
+        for owner, name in (("psf", "re\x00quests"), ("psf", "re\nquests"), ("..", "..")):
+            database.add_repo(owner, name)
+        assert [(r["owner"], r["name"]) for r in invalid_repos(database)] == [
+            ("..", ".."), ("psf", "re\x00quests"), ("psf", "re\nquests")]
+
+    def test_untrack_invalid_removes_them_with_their_data_and_nothing_else(self, db_path):
+        database = track(db_path, "psf", "requests")
+        valid_id = int(database.get_repo("psf", "requests")["id"])
+        database.add_event(valid_id, "issue_opened", ref_number=1)
+        for owner, name in (("psf", "re\x00quests"), ("psf", "requests#x")):
+            repo_id = database.add_repo(owner, name)
+            database.add_event(repo_id, "issue_opened", ref_number=2)
+
+        removed = untrack_invalid(db_path)
+
+        assert removed == ["'psf/re\\x00quests'", "'psf/requests#x'"]
+        assert [(r["owner"], r["name"]) for r in database.list_repos()] == [("psf", "requests")]
+        assert [e["ref_number"] for e in database.recent_events(10)] == [1]
+        assert untrack_invalid(db_path) == []
 
 
 class TestRepositoriesWithoutPullRequests:

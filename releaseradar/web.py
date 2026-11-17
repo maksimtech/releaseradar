@@ -26,7 +26,7 @@ from urllib.parse import urlunsplit
 
 from . import __version__
 from . import db as _db
-from .sync import sync_all
+from .sync import name_is_valid, shown_repo, sync_all
 
 ICONS = {
     "issue_opened": "🐛",
@@ -149,12 +149,13 @@ def state(db_path: Path, poller: Poller | None, limit: int = 100) -> dict[str, A
         summary = database.repo_summary(row["owner"], row["name"])
         latest = summary.get("latest_release")
         repos.append({
-            "repo": f"{row['owner']}/{row['name']}",
+            "repo": shown_repo(row["owner"], row["name"]),
             "open_issues": summary.get("open_issues", 0),
             "open_prs": summary.get("open_prs", 0),
             "latest_release": latest["tag_name"] if latest else None,
             "latest_release_at": latest["published_at"] if latest else None,
             "last_synced_at": row["last_synced_at"],
+            "invalid_name": not name_is_valid(row["owner"], row["name"]),
         })
     return {
         "version": __version__,
@@ -231,7 +232,7 @@ async function refresh() {
   $("status").textContent = p.running ? "syncing…" : `last sync ${ago(p.last_finished)} · next in ${inFuture(p.next_at)} · every ${Math.round((p.interval_seconds||0)/60)} min · v${st.version}`;
   $("progress").textContent = p.running ? (p.progress || "") : "";
   $("sync").disabled = !!p.running;
-  $("repos").innerHTML = st.repos.map(r => `<tr><td>${esc(r.repo)}</td><td class="num">${r.open_issues}</td><td class="num">${r.open_prs}</td><td>${esc(r.latest_release || "—")}</td><td>${ago(r.last_synced_at)}</td></tr>`).join("") || `<tr><td colspan="5" class="empty">Nothing tracked yet: <code>releaseradar track owner/repo</code></td></tr>`;
+  $("repos").innerHTML = st.repos.map(r => `<tr><td>${esc(r.repo)}${r.invalid_name ? ' <span class="err">invalid name: remove it with <code>releaseradar untrack --invalid</code></span>' : ""}</td><td class="num">${r.open_issues}</td><td class="num">${r.open_prs}</td><td>${esc(r.latest_release || "—")}</td><td>${ago(r.last_synced_at)}</td></tr>`).join("") || `<tr><td colspan="5" class="empty">Nothing tracked yet: <code>releaseradar track owner/repo</code></td></tr>`;
   const notes = [...(p.warnings||[]).map(w => `<div class="warn">! ${esc(w)}</div>`), ...Object.entries(p.errors||{}).map(([k,v]) => `<div class="err">✗ ${esc(k)}: ${esc(v)}</div>`)];
   $("notes").innerHTML = notes.join("");
   $("count").textContent = st.events.length ? `(${st.events.length})` : "";

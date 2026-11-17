@@ -192,12 +192,22 @@ class TestState:
         assert snapshot["repos"] == [{
             "repo": "maksimtech/cookieradar", "open_issues": 0, "open_prs": 0,
             "latest_release": "v2026.44", "latest_release_at": "2026-10-10T10:00:00Z", "last_synced_at": None,
+            "invalid_name": False,
         }]
         kinds = [(e["icon"], e["kind"], e["ref"], e["title"], e["url"]) for e in snapshot["events"]]
         assert kinds == [
             ("✅", "issue_closed", "#7", "Fix the thing", "https://example/i"),
             ("🚀", "release_published", "v2026.44", "CookieRadar 2026.44", "https://example/r"),
         ]
+
+    def test_an_invalid_stored_name_is_shown_escaped_and_marked(self, db_path):
+        """The page escapes HTML; the name still has to be readable, a NUL or a
+        newline included, and the way to remove it has to be on the page."""
+        database = _db.open_db(db_path)
+        database.add_repo("psf", "re\x00quests")
+        snapshot = state(db_path, poller=None)
+        assert [(r["repo"], r["invalid_name"]) for r in snapshot["repos"]] == [("'psf/re\\x00quests'", True)]
+        assert "releaseradar untrack --invalid" in PAGE
 
 
 class TestPoller:

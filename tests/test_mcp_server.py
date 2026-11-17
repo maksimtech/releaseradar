@@ -196,11 +196,31 @@ class TestRepositoryNames:
         assert "owner/repo" in refused(server, tool, repo="../..")
         assert github.calls.call_count == 0
 
-    def test_a_name_tracked_before_names_were_checked_can_be_untracked(self, server, db_path):
+    def test_untrack_checks_the_name_and_points_to_the_cli_for_stored_invalid_rows(self, server, db_path):
+        """No unchecked path: an invalid stored row is removed with the CLI's
+        `untrack --invalid`, which a person runs and reads; no tool deletes
+        rows in bulk on a model's word."""
         _db.open_db(db_path).add_repo("psf", "requests#x")
-        assert json.loads(text_of(call(server, "untrack_repo", repo="psf/requests#x"))) == {
-            "untracked": "psf/requests#x"}
-        assert _db.open_db(db_path).list_repos() == []
+        message = refused(server, "untrack_repo", repo="psf/requests#x")
+        assert "owner/repo" in message
+        assert "releaseradar untrack --invalid" in message
+        assert len(_db.open_db(db_path).list_repos()) == 1
+
+    def test_list_repos_marks_invalid_rows_and_says_how_to_remove_them(self, server, db_path):
+        database = _db.open_db(db_path)
+        database.add_repo("psf", "requests")
+        database.add_repo("psf", "re\x00quests")
+        database.add_repo("a[/]", "b")
+        listed = json.loads(text_of(call(server, "list_repos")))
+        by_repo = {r["repo"]: r for r in listed["repos"]}
+        assert set(by_repo) == {"psf/requests", "'psf/re\\x00quests'", "'a[/]/b'"}
+        assert by_repo["psf/requests"]["invalid_name"] is False
+        assert by_repo["'psf/re\\x00quests'"]["invalid_name"] is True
+        assert "releaseradar untrack --invalid" in listed["hint"]
+
+    def test_list_repos_has_no_hint_when_every_name_is_valid(self, server, db_path):
+        _db.open_db(db_path).add_repo("psf", "requests")
+        assert "hint" not in json.loads(text_of(call(server, "list_repos")))
 
     def test_sync_all_reports_a_malformed_tracked_name_and_syncs_the_rest(self, server, db_path, github):
         github.get(f"{API}/repos/psf/requests").mock(return_value=replay("gh_codecov-mcp_repo.json"))
@@ -213,8 +233,8 @@ class TestRepositoryNames:
         everything = json.loads(text_of(call(server, "sync_all")))
 
         assert everything["results"] == {"maksimtech/cookieradar": []}
-        assert list(everything["errors"]) == ["psf/requests#x"]
-        assert "untrack" in everything["errors"]["psf/requests#x"]
+        assert list(everything["errors"]) == ["'psf/requests#x'"]
+        assert "releaseradar untrack --invalid" in everything["errors"]["'psf/requests#x'"]
 
 
 class TestErrorsOverTheWire:
