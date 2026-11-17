@@ -21,7 +21,9 @@ a fix ships as the next release, never as a patch to an older one.
   on them.
 - **The dashboard** (`releaseradar web`) listens on 127.0.0.1 only, over plain HTTP,
   with no login: anyone on the same machine who can reach the port can read it and
-  ask for a sync.
+  ask for a sync. Web pages cannot: it answers only a `Host` naming its own loopback
+  address and port (or a name given with `--allow-host`), and a sync only from its
+  own page's `Origin`.
 - **The MCP server** speaks over stdio to the client that started it and opens no
   port.
 

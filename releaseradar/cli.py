@@ -318,6 +318,11 @@ def web(
     every: Annotated[float, typer.Option("--every", min=1, help="Minutes between syncs")] = 15,
     port: Annotated[int, typer.Option("--port", min=1, max=65535, help="Port on 127.0.0.1")] = 8765,
     no_browser: Annotated[bool, typer.Option("--no-browser", help="Do not open the page in the browser")] = False,
+    allow_host: Annotated[
+        list[str] | None,
+        typer.Option("--allow-host", help="Another Host the page may be reached under (repeatable), "
+                                          "e.g. an alias or a tunnel's localhost:9000"),
+    ] = None,
 ) -> None:
     """Open a local dashboard (127.0.0.1 only) that syncs every few minutes and shows what changed."""
     from .web import serve
@@ -325,7 +330,8 @@ def web(
     if not _db.open_db(_db_path()).list_repos():
         rprint("[dim]Nothing tracked yet. Add a repo with [bold]releaseradar track owner/repo[/bold]; "
                "the page will pick it up at the next sync.[/dim]")
-    serve(db_path=_db_path(), token=_token(), every_minutes=every, port=port, open_browser=not no_browser)
+    serve(db_path=_db_path(), token=_token(), every_minutes=every, port=port, open_browser=not no_browser,
+          extra_hosts=allow_host or [])
 
 
 # ── mcp ───────────────────────────────────────────────────────────────────────

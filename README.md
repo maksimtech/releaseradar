@@ -91,7 +91,13 @@ release, the feed of what changed (new entries highlighted as they arrive), the
 last and next sync, a *Sync now* button, and the poller's warnings and errors.
 It runs the same `sync` as the CLI, on a timer, with the same database and
 the same `GITHUB_TOKEN`. Standard library only, bound to 127.0.0.1, no login:
-it is for the machine it runs on.
+it is for the machine it runs on. It answers only requests whose `Host` is
+`127.0.0.1`, `localhost` or `[::1]` with its port, so a web page cannot read it
+by pointing a domain of its own at 127.0.0.1 (DNS rebinding), and *Sync now*
+(`POST /api/sync`) only from its own page (its `Origin`, or
+`Sec-Fetch-Site: same-origin`), so another site cannot start a sync with your
+token. Reached under another name, an alias or an SSH tunnel, say so with
+`--allow-host NAME[:PORT]`, once per name.
 
 ## Configuration
 

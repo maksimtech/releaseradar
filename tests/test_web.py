@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import http.client
 import json
 import threading
 import time
@@ -45,7 +46,7 @@ class TestPage:
 
     def test_anything_else_is_a_404(self, server):
         assert httpx.get(server.url + "nope").status_code == 404
-        assert httpx.post(server.url + "api/nope").status_code == 404
+        assert httpx.post(server.url + "api/nope", headers={"Origin": server.url.rstrip("/")}).status_code == 404
 
     def test_the_server_binds_to_loopback_only(self, server):
         assert server.server_address[0] == "127.0.0.1"
@@ -63,6 +64,115 @@ class TestPage:
 
     def test_responses_are_not_cached(self, server):
         assert httpx.get(server.url + "api/state").headers["cache-control"] == "no-store"
+
+
+def _started(db_path: Path, extra_hosts: tuple[str, ...] = ()) -> tuple[DashboardServer, Poller]:
+    """A dashboard with a poller that is never started: `trigger()` only sets its
+    wake-up flag, which says whether a request got through to it."""
+    poller = Poller(interval=3600, token=None, db_path=db_path)
+    srv = DashboardServer("127.0.0.1", 0, db_path, poller, extra_hosts=extra_hosts)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv, poller
+
+
+@pytest.fixture
+def guarded(db_path: Path):
+    srv, poller = _started(db_path, extra_hosts=("radar.lan", "localhost:9000"))
+    try:
+        yield srv, poller
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+def _raw(srv: DashboardServer, method: str, path: str, headers: dict[str, str], host: bool = True) -> int:
+    """One request with exactly these headers: httpx always adds a Host of its own."""
+    conn = http.client.HTTPConnection("127.0.0.1", srv.server_port, timeout=10)
+    try:
+        conn.putrequest(method, path, skip_host=not host, skip_accept_encoding=True)
+        for name, value in headers.items():
+            conn.putheader(name, value)
+        conn.endheaders()
+        response = conn.getresponse()
+        response.read()
+        return response.status
+    finally:
+        conn.close()
+
+
+class TestHostAndOrigin:
+    """Bound to 127.0.0.1, the dashboard was still reachable from any web page:
+    a page whose host name resolves to 127.0.0.1 a minute after it loaded (DNS
+    rebinding) read /api/state under its own Host, and a cross-site form or
+    fetch got 202 from POST /api/sync, a sync with the caller's token. Seen on
+    2026-11-17 with `Host: evil.example:80` and `Origin: https://evil.example`."""
+
+    @pytest.mark.parametrize("path", ["/", "/api/state", "/nope"])
+    def test_a_foreign_host_is_refused(self, guarded, path):
+        srv, _ = guarded
+        response = httpx.get(srv.url.rstrip("/") + path, headers={"Host": "evil.example:80"})
+        assert response.status_code == 403
+        assert "repos" not in response.text
+
+    @pytest.mark.parametrize("host", ["127.0.0.1:{port}", "localhost:{port}", "[::1]:{port}", "LOCALHOST:{port}",
+                                      "radar.lan:{port}", "localhost:9000"])
+    def test_the_loopback_names_and_the_configured_ones_are_served(self, guarded, host):
+        srv, _ = guarded
+        response = httpx.get(srv.url + "api/state", headers={"Host": host.format(port=srv.server_port)})
+        assert response.status_code == 200
+        assert response.json()["repos"] == []
+
+    @pytest.mark.parametrize("host", ["127.0.0.1", "127.0.0.1:1", "localhost.:{port}", "radar.lan:9000",
+                                      "127.0.0.1:{port}.evil.example", "evil.example"])
+    def test_a_loopback_name_on_another_port_or_a_lookalike_is_refused(self, guarded, host):
+        srv, _ = guarded
+        response = httpx.get(srv.url + "api/state", headers={"Host": host.format(port=srv.server_port)})
+        assert response.status_code == 403
+
+    def test_a_request_without_a_host_is_refused(self, guarded):
+        srv, _ = guarded
+        assert _raw(srv, "GET", "/api/state", {}, host=False) == 403
+
+    @pytest.mark.parametrize("origin", ["https://evil.example", "null", "http://evil.example:{port}",
+                                        "https://127.0.0.1:{port}", "http://127.0.0.1:1", "http://127.0.0.1"])
+    def test_a_sync_from_another_origin_is_refused(self, guarded, origin):
+        srv, poller = guarded
+        response = httpx.post(srv.url + "api/sync", headers={"Origin": origin.format(port=srv.server_port)})
+        assert response.status_code == 403
+        assert not poller._wake.is_set()
+
+    def test_a_sync_without_origin_or_fetch_metadata_is_refused(self, guarded):
+        srv, poller = guarded
+        assert httpx.post(srv.url + "api/sync").status_code == 403
+        assert _raw(srv, "POST", "/api/sync", {"Host": f"127.0.0.1:{srv.server_port}",
+                                                "Sec-Fetch-Site": "cross-site"}) == 403
+        assert not poller._wake.is_set()
+
+    @pytest.mark.parametrize("origin", ["http://127.0.0.1:{port}", "http://localhost:{port}",
+                                        "http://radar.lan:{port}"])
+    def test_a_sync_from_the_page_itself_is_accepted(self, guarded, origin):
+        srv, poller = guarded
+        response = httpx.post(srv.url + "api/sync", headers={"Origin": origin.format(port=srv.server_port)})
+        assert response.status_code == 202
+        assert poller._wake.is_set()
+
+    def test_same_origin_fetch_metadata_stands_in_for_a_missing_origin(self, guarded):
+        srv, poller = guarded
+        assert _raw(srv, "POST", "/api/sync", {"Host": f"127.0.0.1:{srv.server_port}",
+                                                "Sec-Fetch-Site": "same-origin"}) == 202
+        assert poller._wake.is_set()
+
+    def test_a_right_origin_does_not_excuse_a_foreign_host(self, guarded):
+        srv, poller = guarded
+        response = httpx.post(srv.url + "api/sync", headers={"Host": "evil.example:80",
+                                                             "Origin": f"http://127.0.0.1:{srv.server_port}"})
+        assert response.status_code == 403
+        assert not poller._wake.is_set()
+
+    def test_the_page_sends_the_origin_the_check_wants(self):
+        """The browser adds `Origin` to every POST a page makes with fetch,
+        same-origin included; the page's own button is one."""
+        assert 'fetch("/api/sync", {method: "POST"})' in PAGE
 
 
 class TestState:
@@ -161,7 +271,8 @@ class TestPoller:
             deadline = time.time() + 10
             while poller.snapshot()["runs"] < 1 and time.time() < deadline:
                 time.sleep(0.05)
-            response = httpx.post(srv.url + "api/sync")
+            # As the page's button sends it: a browser adds the Origin to a POST.
+            response = httpx.post(srv.url + "api/sync", headers={"Origin": srv.url.rstrip("/")})
             assert response.status_code == 202
             while poller.snapshot()["runs"] < 2 and time.time() < deadline:
                 time.sleep(0.05)
@@ -187,3 +298,17 @@ class TestCommand:
         result = CliRunner(env={"NO_COLOR": "1", "TERM": "dumb", "COLUMNS": "200"}).invoke(app, ["web", "--help"])
         assert result.exit_code == 0
         assert "--every" in result.output and "--port" in result.output
+        assert "--allow-host" in result.output
+
+    def test_allow_host_reaches_the_server(self, db_path, monkeypatch):
+        from typer.testing import CliRunner
+
+        from releaseradar import web
+        from releaseradar.cli import app
+
+        seen: dict = {}
+        monkeypatch.setattr(web, "serve", lambda **kwargs: seen.update(kwargs))
+        result = CliRunner().invoke(app, ["web", "--no-browser", "--allow-host", "radar.lan",
+                                          "--allow-host", "localhost:9000"])
+        assert result.exit_code == 0, result.output
+        assert seen["extra_hosts"] == ["radar.lan", "localhost:9000"]

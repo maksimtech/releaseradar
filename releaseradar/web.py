@@ -5,7 +5,10 @@ Standard library only — `http.server` and a thread — because a page that rea
 a local SQLite file does not need a web framework, and the CLI must not grow
 the dependency closure the `[mcp]` extra was kept out of the base install for.
 Bound to the loopback address and nothing else: there is no authentication,
-because there is nobody else on the other end.
+because there is nobody else on the other end. Nobody but the browser, which
+runs other sites' pages too: every request must name this server in its `Host`
+(a loopback name and this port, or a host given with `--allow-host`), and a
+`POST` must come from one of those origins as well.
 """
 
 from __future__ import annotations
@@ -13,6 +16,7 @@ from __future__ import annotations
 import json
 import threading
 import webbrowser
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -246,6 +250,11 @@ refresh(); setInterval(refresh, 5000);
 """
 
 
+# The names the page is served under: the loopback address it listens on, the
+# name every system gives it, and the IPv6 one a browser may use for localhost.
+LOOPBACK_NAMES = ("127.0.0.1", "localhost", "[::1]")
+
+
 class _Handler(BaseHTTPRequestHandler):
     server: DashboardServer
 
@@ -260,8 +269,33 @@ class _Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _refuse(self, why: str) -> None:
+        self._send(HTTPStatus.FORBIDDEN, json.dumps({"error": why}).encode("utf-8"), "application/json")
+
+    def _host_allowed(self) -> bool:
+        """The Host header names this server. Bound to 127.0.0.1, it can still be
+        reached under any name a page gets to resolve there: a host name that
+        points to 127.0.0.1 a minute after its page loaded (DNS rebinding) made
+        /api/state readable to that page under its own Host. Checked on every
+        request, the page itself included (found on 2026-11-17)."""
+        host = self.headers.get("Host")
+        return host is not None and host.strip().lower() in self.server.allowed_hosts
+
+    def _origin_allowed(self) -> bool:
+        """A POST comes from the page itself. Browsers add `Origin` to every POST,
+        same-origin included; without one, `Sec-Fetch-Site: same-origin` says the
+        same thing. Neither means a client that is not a browser page of this
+        server, or one too old to say: refused. A cross-site form or fetch got
+        202 from POST /api/sync, a sync with the caller's token (2026-11-17)."""
+        origin = self.headers.get("Origin")
+        if origin is not None:
+            return origin.strip().lower() in self.server.allowed_origins
+        return self.headers.get("Sec-Fetch-Site") == "same-origin"
+
     def do_GET(self) -> None:  # noqa: N802 - the stdlib's name
-        if self.path == "/" or self.path.startswith("/?"):
+        if not self._host_allowed():
+            self._refuse("this dashboard answers only to its own address on the loopback interface")
+        elif self.path == "/" or self.path.startswith("/?"):
             self._send(HTTPStatus.OK, PAGE.encode("utf-8"), "text/html; charset=utf-8")
         elif self.path.startswith("/api/state"):
             body = json.dumps(state(self.server.db_path, self.server.poller), default=str).encode("utf-8")
@@ -270,7 +304,11 @@ class _Handler(BaseHTTPRequestHandler):
             self._send(HTTPStatus.NOT_FOUND, b'{"error": "not found"}', "application/json")
 
     def do_POST(self) -> None:  # noqa: N802 - the stdlib's name
-        if self.path == "/api/sync":
+        if not self._host_allowed():
+            self._refuse("this dashboard answers only to its own address on the loopback interface")
+        elif not self._origin_allowed():
+            self._refuse("a sync can only be asked for by the dashboard's own page")
+        elif self.path == "/api/sync":
             if self.server.poller is not None:
                 self.server.poller.trigger()
             self._send(HTTPStatus.ACCEPTED, b'{"triggered": true}', "application/json")
@@ -282,11 +320,14 @@ class DashboardServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
 
-    def __init__(self, host: str, port: int, db_path: Path, poller: Poller | None) -> None:
+    def __init__(self, host: str, port: int, db_path: Path, poller: Poller | None,
+                 extra_hosts: Iterable[str] = ()) -> None:
         super().__init__((host, port), _Handler)
         self.db_path = db_path
         self.poller = poller
         self.host = host
+        self.allowed_hosts = allowed_hosts(self.server_port, extra_hosts)
+        self.allowed_origins = frozenset(f"http://{name}" for name in self.allowed_hosts)
 
     @property
     def url(self) -> str:
@@ -298,16 +339,34 @@ class DashboardServer(ThreadingHTTPServer):
 LOOPBACK = "127.0.0.1"
 
 
+def allowed_hosts(port: int, extra_hosts: Iterable[str] = ()) -> frozenset[str]:
+    """The `Host` values the dashboard answers to, lower-cased: each loopback name
+    with the port it listens on, and each host given with `--allow-host` — as
+    given when it names a port (a tunnel's `localhost:9000`), with this port when
+    it does not. Port 80 is the one a browser leaves out of the header."""
+    names: set[str] = set()
+    for name in (*LOOPBACK_NAMES, *(h.strip().lower() for h in extra_hosts)):
+        if not name:
+            continue
+        has_port = name.rpartition(":")[2].isdigit() and not name.endswith("]")
+        names.add(name if has_port else f"{name}:{port}")
+        if not has_port and port == 80:
+            names.add(name)
+    return frozenset(names)
+
+
 def serve(db_path: Path, token: str | None, every_minutes: float,
-          port: int = 8765, open_browser: bool = True) -> None:
+          port: int = 8765, open_browser: bool = True, extra_hosts: Iterable[str] = ()) -> None:
     """Start the poller and the page, open the browser, and block until Ctrl-C.
 
     Loopback only, and not an option: the page has no login and the token it
     syncs with is the caller's. Plain HTTP is right for that address and wrong
-    for any other, which is why there is no `--host`.
+    for any other, which is why there is no `--host`. `extra_hosts` are other
+    names the page may be reached under, an alias in the hosts file or an SSH
+    tunnel's `localhost:9000`; nothing else is answered (see `allowed_hosts`).
     """
     poller = Poller(interval=every_minutes * 60, token=token, db_path=db_path)
-    server = DashboardServer(LOOPBACK, port, db_path, poller)
+    server = DashboardServer(LOOPBACK, port, db_path, poller, extra_hosts=extra_hosts)
     poller.start()
     print(f"ReleaseRadar dashboard on {server.url} — syncing every {every_minutes:g} min; Ctrl-C to stop.")
     if open_browser:

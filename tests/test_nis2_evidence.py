@@ -333,15 +333,34 @@ def test_the_dashboard_listens_where_the_document_says_and_nowhere_else(doc):
     assert "ogni 15 minuti" in text
 
 
-def test_the_dashboard_checks_neither_host_nor_origin(doc):
-    """The document tells the customer that any page open in a browser on the
-    same machine can send the dashboard its sync request, because the handler
-    reads neither the Host nor the Origin header. If a check is added, this goes
-    red and the sentence comes out."""
-    handler = inspect.getsource(web._Handler)
-    assert "Origin" not in handler and "Host" not in handler and "self.headers" not in handler
-    assert "POST /api/sync" in doc
-    assert "non controlla le intestazioni `Host` e `Origin`" in prose(doc)
+def test_the_dashboard_checks_host_and_origin_as_the_document_says(doc, db_path):
+    """Until 2026-11-17 the document told the customer that any page open in a
+    browser on the same machine could read the dashboard and ask it for a sync,
+    because the handler read neither header. Now it says what is checked, and a
+    real server is asked here whether that is so."""
+    import threading
+
+    import httpx
+
+    srv = web.DashboardServer(web.LOOPBACK, 0, db_path, poller=None)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        own = f"127.0.0.1:{srv.server_port}"
+        assert httpx.get(srv.url + "api/state", headers={"Host": "evil.example"}).status_code == 403
+        assert httpx.get(srv.url + "api/state", headers={"Host": own}).status_code == 200
+        assert httpx.post(srv.url + "api/sync", headers={"Origin": "https://evil.example"}).status_code == 403
+        assert httpx.post(srv.url + "api/sync").status_code == 403
+        assert httpx.post(srv.url + "api/sync", headers={"Origin": f"http://{own}"}).status_code == 202
+    finally:
+        srv.shutdown()
+        srv.server_close()
+    assert web.LOOPBACK_NAMES == ("127.0.0.1", "localhost", "[::1]")
+    text = prose(doc)
+    assert "POST /api/sync" in text
+    assert "controlla l'intestazione `Host` di ogni richiesta" in text
+    assert "`Origin`" in text and "`Sec-Fetch-Site: same-origin`" in text
+    assert "`--allow-host`" in text
+    assert "non controlla le intestazioni" not in text
 
 
 def test_the_dashboard_keeps_no_access_log(doc, capsys):

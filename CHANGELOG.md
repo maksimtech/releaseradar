@@ -9,6 +9,19 @@ the year is the generation shared by the five Radar and the count is this one's 
 
 ### Fixed
 
+- **The dashboard answers only to its own address, and a sync only to its own page.** Bound to
+  127.0.0.1, it still served any request that got there: a page whose domain is made to resolve to
+  127.0.0.1 after it loaded (DNS rebinding) could read `/api/state` under its own `Host`, and a
+  cross-site form or fetch got 202 from `POST /api/sync`, a sync with the token of whoever started
+  the dashboard; both reproduced on 2026-11-17 with `Host: evil.example:80` and
+  `Origin: https://evil.example`. docs/nis2-compliance.md listed it as an accepted gap. Every
+  request must now carry a `Host` of `127.0.0.1`, `localhost` or `[::1]` with the dashboard's port,
+  or a name given with the new `--allow-host NAME[:PORT]`; anything else, or no `Host`, is a 403
+  with no data. A POST must also carry an `Origin` of `http://` and one of those names, or, without
+  one, `Sec-Fetch-Site: same-origin`, which the page's *Sync now* does on its own; a client that
+  sends neither is refused. The document, README and SECURITY.md now say what is checked;
+  `tests/test_web.py` and `tests/test_nis2_evidence.py` ask a real server.
+
 - **A repository name can no longer take a request, token included, outside `/repos/<owner>/<repo>`,
   and one bad name no longer stops every sync.** The name went into the URL as typed. httpx
   normalises `/repos/../users` to `/users`, so `releaseradar track ../users` printed "Now tracking"
