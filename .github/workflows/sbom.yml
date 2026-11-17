@@ -69,10 +69,11 @@ jobs:
           } >> "$GITHUB_ENV"
           mkdir -p "$RUNNER_TEMP/evidence"
 
-      - name: Checkout the tag
+      # This workflow's own commit first, for the Safe Chain action: a dispatch can
+      # name a tag cut before the action existed. The shims it installs live in
+      # $HOME and stay on PATH when the tag replaces this checkout below.
+      - name: Checkout this workflow's commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ env.TAG }}
 
       # The interpreter of the image (python:3.14-slim-trixie), so that the two
       # SBOMs describe the same dependency resolution (tests/test_docker_python.py).
@@ -81,16 +82,21 @@ jobs:
         with:
           python-version: "3.14"
 
+      # Every pip, uv and python after this goes through Aikido Safe Chain
+      # (tests/test_safe_chain.py).
+      - name: Aikido Safe Chain
+        uses: ./.github/actions/safe-chain
+
+      - name: Checkout the tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.TAG }}
+
       # Two environments: the one described holds the package and what it pulls
       # in, and nothing of the tool that describes it. With the [mcp] extra,
       # because the Dockerfile installs it on both of its branches: the
       # environment described is the one the image ships, resolved on the day
       # this runs (the image's own SBOM lists the versions it actually holds).
-
-      # Every pip, uv and python after this goes through Aikido Safe Chain
-      # (tests/test_safe_chain.py).
-      - name: Aikido Safe Chain
-        uses: ./.github/actions/safe-chain
       - name: SBOM of the Python environment
         run: |
           python -m venv /tmp/product

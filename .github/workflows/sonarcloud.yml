@@ -36,6 +36,12 @@ jobs:
       - name: Run tests with coverage
         run: |
           pytest tests/ --cov=releaseradar --cov-report=xml --cov-report=term-missing
+      # The version SonarCloud files the analysis under, from the one place it
+      # lives; a line in sonar-project.properties said 2026.1 until 2026.6
+      # (tests/test_sonar_version.py).
+      - name: Read the package version
+        id: version
+        run: echo "version=$(python -c 'from releaseradar import __version__; print(__version__)')" >> "$GITHUB_OUTPUT"
       # `qualitygate.wait` is what makes this job mean something. Without it the
       # step uploads the analysis and succeeds, and SonarCloud decides the gate
       # afterwards — so the workflow can be green while the gate is ERROR, and
@@ -48,6 +54,7 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
           args: >
+            -Dsonar.projectVersion=${{ steps.version.outputs.version }}
             -Dsonar.qualitygate.wait=true
 
       - name: Report skipped scan
