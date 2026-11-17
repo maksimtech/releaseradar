@@ -327,7 +327,9 @@ class DashboardServer(ThreadingHTTPServer):
         self.poller = poller
         self.host = host
         self.allowed_hosts = allowed_hosts(self.server_port, extra_hosts)
-        self.allowed_origins = frozenset(f"http://{name}" for name in self.allowed_hosts)
+        # The page is served over plain HTTP on the loopback interface (see `url`),
+        # so its own origin is the http one; an https origin is not this page.
+        self.allowed_origins = frozenset(urlunsplit(("http", name, "", "", "")) for name in self.allowed_hosts)
 
     @property
     def url(self) -> str:
