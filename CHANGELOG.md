@@ -11,6 +11,14 @@ the year is the generation shared by the five Radar and the count is this one's 
 
 ### Changed
 
+- **Two OpenSSL issues of 2026-11-17 are accepted until Debian ships 3.5.10.** On 2026-11-18 Docker
+  Scout reported CVE-2026-107493 and CVE-2026-124709 as high against the same openssl, and Security
+  Posture failed again. OpenSSL rates both Low and fixes them in 3.5.10; Debian lists trixie and sid
+  as vulnerable, with no fix. Neither is reachable here: one needs an application passing its own
+  stack to `PEM_X509_INFO_read_bio_ex()`, which OpenSSL and Python's ssl never do, the other a QUIC
+  server. The advisory's third issue, CVE-2026-35190, is not reported by any scanner yet and has no
+  entry, since an unused one fails the gate. Reviewed on 2026-12-15 with the four of 2026-11-10 below.
+
 - **Four OpenSSL issues of 2026-11-10 are accepted until Debian ships 3.5.10.** At the scan of main
   on 2026-11-17 Docker Scout reported CVE-2026-95691, CVE-2026-95692, CVE-2026-88823 and
   CVE-2026-107496 as high against the base image's openssl 3.5.7-1~deb13u3, and Security Posture
