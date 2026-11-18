@@ -7,6 +7,18 @@ the year is the generation shared by the five Radar and the count is this one's 
 
 ## [Unreleased]
 
+## [2026.8] - 2026-11-18
+
+### Changed
+
+- **Four OpenSSL issues of 2026-11-10 are accepted until Debian ships 3.5.10.** At the scan of main
+  on 2026-11-17 Docker Scout reported CVE-2026-95691, CVE-2026-95692, CVE-2026-88823 and
+  CVE-2026-107496 as high against the base image's openssl 3.5.7-1~deb13u3, and Security Posture
+  failed. OpenSSL rates all four Low and fixes them in 3.5.10; Debian has no trixie package with the
+  fix yet. None is reachable here: they need the OpenSSL QUIC client, AES-GCM-SIV through EVP, or
+  `CMS_encrypt()`, and Python's ssl exposes none of them. The entries are reviewed on 2026-12-15;
+  the rebuild that brings the DSA will make them fail the gate as unused.
+
 ### Fixed
 
 - **`untrack` checks the name like every other command, and `untrack --invalid` removes the rows
@@ -403,7 +415,8 @@ traffic before anything shipped; what follows is what that review changed.
   named three of the five Radar and a Claude configuration path that does not
   exist.
 
-[Unreleased]: https://github.com/maksimtech/releaseradar/compare/v2026.7...HEAD
+[Unreleased]: https://github.com/maksimtech/releaseradar/compare/v2026.8...HEAD
+[2026.8]: https://github.com/maksimtech/releaseradar/compare/v2026.7...v2026.8
 [2026.7]: https://github.com/maksimtech/releaseradar/compare/v2026.6...v2026.7
 [2026.6]: https://github.com/maksimtech/releaseradar/compare/v2026.5...v2026.6
 [2026.5]: https://github.com/maksimtech/releaseradar/compare/v2026.4...v2026.5
