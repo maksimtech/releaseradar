@@ -118,5 +118,11 @@ also_copy = [
     "release.sh",
     # The record tests/test_security_exceptions.py parses, the one after that.
     "SECURITY-EXCEPTIONS.toml",
+    # Safe Chain's settings, which tests/test_safe_chain.py reads: the run of
+    # 2026-11-21 stopped without them. And the SonarCloud settings
+    # tests/test_sonar_version.py reads, which would have stopped the next one.
+    # tests/test_mutmut_copy.py now finds such a gap on the pull request.
+    ".aikido",
+    "sonar-project.properties",
 ]
 do_not_mutate = ["releaseradar/__init__.py"]
