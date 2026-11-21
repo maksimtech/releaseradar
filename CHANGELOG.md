@@ -18,6 +18,31 @@ the year is the generation shared by the five Radar and the count is this one's 
   request instead of a Saturday later. Verified by rebuilding `mutants/` from mutmut 3.8's copy rules
   and running the suite inside it: 502 passed.
 
+### Security
+
+- **CVE-2026-124709 (OpenSSL, QUIC) stays accepted now that Trivy reports it too.** Debian moved trixie
+  to openssl 3.5.9-1~deb13u1, which a fresh build installs, and on 2026-11-21 Trivy reported the issue
+  against it; the entry was written for Docker Scout alone and Security Posture failed. 3.5.9 does not
+  fix it (fixed upstream in 3.5.10; Debian has no fixed trixie package), and it is still not reachable:
+  Python's ssl exposes no QUIC. The entry now holds for any scanner. Reviewed on 2026-12-15 with the
+  other OpenSSL entries.
+
+- **CVE-2026-84786 (OpenSSL, DANE) is accepted until Debian ships a fix.** Docker Scout started
+  reporting it on main on 2026-11-21, and Security Posture failed. A DANE-enabled TLS client may
+  dereference a NULL pointer on unusual certificate and TLSA records; there is no OpenSSL advisory yet,
+  the fix is openssl/openssl#33634, and Debian has no fixed trixie package. It is not reachable here:
+  Python's ssl exposes no DANE and releaseradar reads no TLSA record. Reviewed on 2026-12-15 with the
+  other OpenSSL entries (maksimtech/apkradar#116).
+
+- **Two glibc issues Debian has already fixed are accepted for Docker Scout until this release is
+  published.** On 2026-11-21 Docker Scout reported CVE-2026-19499 (`strfmon()`) and CVE-2026-5435 (the
+  deprecated resolver printing functions) as high against glibc 2.41-12+deb13u4 in the image published
+  for 2026.8. Debian fixed both for trixie in 2.41-12+deb13u5, which the image built from this source
+  has (`apt-get upgrade`), and Trivy, which reads that image, does not report them. Neither is reached:
+  nothing formats money, and api.github.com is resolved through `getaddrinfo()`, which prints no record.
+  The entries are reviewed on 2026-12-08 and fail the build as unused once the new image is out
+  (maksimtech/apkradar#121).
+
 ## [2026.8] - 2026-11-18
 
 ### Changed
