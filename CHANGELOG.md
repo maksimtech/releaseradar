@@ -7,6 +7,17 @@ the year is the generation shared by the five Radar and the count is this one's 
 
 ## [Unreleased]
 
+### Changed
+
+- **Mutation testing runs again, and a test catches the next gap on the pull request.** The run of
+  2026-11-21 stopped: `tests/test_safe_chain.py`, since 2026-11-16, reads `.aikido`, which mutmut did
+  not copy into `mutants/`. Behind it was a second gap the run never reached, since it stops at the
+  first failure: `tests/test_sonar_version.py`, since 2026-11-17, reads `sonar-project.properties`.
+  Both are now in `also_copy`. `tests/test_mutmut_copy.py` reads the tests for the files they join to
+  the repository root and fails when one that exists is not copied, so the next one shows on its pull
+  request instead of a Saturday later. Verified by rebuilding `mutants/` from mutmut 3.8's copy rules
+  and running the suite inside it: 502 passed.
+
 ## [2026.8] - 2026-11-18
 
 ### Changed
