@@ -8,6 +8,9 @@ permissions:
   contents: read
 jobs:
   test:
+    # The ruleset of main requires the stable rows under this name
+    # (tests/test_ci_contract.py).
+    name: Tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-26.04
     timeout-minutes: 10
     # id-token: write lets the coverage upload prove to Codecov, through GitHub's
@@ -21,11 +24,12 @@ jobs:
       matrix:
         # The stable rows are the Pythons pyproject.toml promises; the `-dev`
         # row is the next minor, allowed to fail. tests/test_ci_contract.py
-        # keeps the two lists equal and says what to promote when 3.15 is final.
-        python-version: ["3.11", "3.12", "3.13", "3.14"]
+        # keeps the two lists equal and says what to promote when 3.16 is final
+        # (2027-10-05, PEP 826). The `-dev` row is never a required check.
+        python-version: ["3.11", "3.12", "3.13", "3.14", "3.15"]
         experimental: [false]
         include:
-          - python-version: "3.15-dev"
+          - python-version: "3.16-dev"
             experimental: true
     continue-on-error: ${{ matrix.experimental }}
     steps:
