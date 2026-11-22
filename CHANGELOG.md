@@ -40,6 +40,14 @@ the year is the generation shared by the five Radar and the count is this one's 
   (`tests/test_scout_binary.py`). Sources:
   [docker/scout-action#116](https://github.com/docker/scout-action/issues/116).
 
+- **Coverage is uploaded with OIDC instead of a token.** The upload authenticated with a
+  `CODECOV_TOKEN` secret, and Codecov files an upload under the project its token belongs to: three
+  other Radars held exeradar's token, and their reports went there for at least a month. This one's was
+  right, but nothing kept it so. The upload now uses OIDC (`use_oidc: true`, `id-token: write` on the
+  test job): GitHub tells Codecov which repository the job runs in, and there is no secret left to mix
+  up. The test that required the token now requires OIDC and forbids the secret
+  (`tests/test_ci_contract.py`). Same as maksimtech/mailradar#135 and the others.
+
 ### Security
 
 - **CVE-2026-121482 (OpenSSL, CRL distribution points) is accepted until Debian ships a fix.** Docker

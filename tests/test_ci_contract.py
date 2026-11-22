@@ -96,10 +96,31 @@ def test_the_upload_runs_once_on_a_version_the_matrix_has(workflow):
     )
 
 
-def test_the_upload_is_given_a_token(workflow):
-    """Codecov wants one even for a public repository; without it the upload is
-    rejected — silently, like everything else here."""
-    assert "CODECOV_TOKEN" in workflow
+def test_the_upload_proves_which_repository_it_comes_from(workflow):
+    """Codecov wants the upload authenticated even for a public repository; without
+    it the upload is rejected — silently, like everything else here.
+
+    It was a `CODECOV_TOKEN` secret until 2026-11-22, and Codecov files an upload
+    under the project the token belongs to, not under the repository that sends it:
+    three Radars held exeradar's token, and their reports went to exeradar's project
+    for at least a month. This repository's token was its own, but nothing kept it
+    so. With OIDC, GitHub itself tells Codecov which repository the job runs in, so
+    no report can land in another project; there is no secret to copy or mix up. The
+    job needs `id-token: write` for that, and a token in the step would only be
+    ignored next to `use_oidc` and mislead whoever reads it."""
+    import yaml
+
+    jobs = yaml.safe_load(workflow)["jobs"]
+    uploads = [(name, job, step) for name, job in jobs.items() for step in job.get("steps", [])
+               if str(step.get("uses", "")).startswith("codecov/codecov-action@")]
+    assert uploads, "nothing uploads coverage"
+    for name, job, step in uploads:
+        options = step.get("with") or {}
+        assert options.get("use_oidc") is True, f"{name}: the upload does not use OIDC"
+        assert "token" not in options, f"{name}: a token next to use_oidc is ignored"
+        assert (job.get("permissions") or {}).get("id-token") == "write", (
+            f"{name}: without id-token: write the job cannot ask GitHub for the OIDC token")
+    assert "secrets.CODECOV_TOKEN" not in workflow, "the secret is still read somewhere"
 
 
 def test_the_actions_are_pinned_by_sha(workflow):
