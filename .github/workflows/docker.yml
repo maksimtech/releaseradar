@@ -25,6 +25,16 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+      - name: Fetch the Scout binary with the job's token
+        # docker/scout-action downloads its binary anonymously and fails with a 403
+        # when the runner's shared address has spent GitHub's 60-an-hour budget
+        # (docker/scout-action#116). It uses the binary when it is already in place;
+        # this puts the one of the pinned version there, checked against its digest
+        # (tests/test_scout_binary.py). Here, before the step that checks out the tag
+        # being built: a tag older than the script does not have it.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/fetch_scout_binary.sh e7e2a72bf1485d10a58f30696b6c513b261ce4fa v1.29.0
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
       - name: Set up Docker Buildx
@@ -68,7 +78,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Docker Scout CVE scan
-        uses: docker/scout-action@v1
+        uses: docker/scout-action@e7e2a72bf1485d10a58f30696b6c513b261ce4fa # v1.29.0
         with:
           command: cves
           image: maksimtech/releaseradar:${{ github.event_name == 'schedule' && 'latest' || steps.version.outputs.VERSION }}

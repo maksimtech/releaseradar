@@ -27,6 +27,19 @@ the year is the generation shared by the five Radar and the count is this one's 
   minutes it waits for PyPI to show and install the new version; the test reads both waits from the
   workflows (`tests/test_job_timeouts.py`, maksimtech/apkradar#113).
 
+- **Docker Scout no longer fails on GitHub's anonymous rate limit, and runs a version this repository
+  chose.** docker/scout-action downloads its ~190 MB binary from api.github.com without authentication,
+  on the 60-an-hour budget of the runner's address, which GitHub-hosted runners share; when others have
+  spent it the scan fails with "Unexpected HTTP response: 403" before looking at the image, and Security
+  Posture after it is skipped (twice on main on 2026-11-21). `.github/scripts/fetch_scout_binary.sh` now
+  fetches the binary with the job's token first and puts it where the action uses a binary already in
+  place, after checking that the release tag is the pinned commit and that the file has the SHA-256
+  GitHub publishes. In the image workflow it runs before the checkout of the tag being built, which an
+  older tag would not have. The action itself was `docker/scout-action@v1`, a tag its owner moves
+  (v1.30.0 since 2026-11-20); it is now pinned to the commit of v1.29.0, as in the other Radars
+  (`tests/test_scout_binary.py`). Sources:
+  [docker/scout-action#116](https://github.com/docker/scout-action/issues/116).
+
 ### Security
 
 - **CVE-2026-124709 (OpenSSL, QUIC) stays accepted now that Trivy reports it too.** Debian moved trixie
