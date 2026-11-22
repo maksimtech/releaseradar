@@ -13,7 +13,11 @@ the year is the generation shared by the five Radar and the count is this one's 
   it moves from the experimental `3.15-dev` row to the stable matrix and to the classifiers, and
   `3.16-dev` takes its place as the one row with `continue-on-error`, as in apkradar. The matrix jobs
   now report as `Tests (Python 3.11)` … `Tests (Python 3.16-dev)` rather than `test (3.11, false)`,
-  so main's ruleset can require each stable row by name (`tests/test_ci_contract.py`).
+  so main's ruleset can require each stable row by name (`tests/test_ci_contract.py`). On 3.15 pyyaml,
+  a dev tool, has no wheel yet and builds from source; everything else installs from a published
+  wheel. The `3.16-dev` row is red today, as it may be: cffi 2.1.1 has no 3.16 wheel and its source
+  does not compile there, since python/cpython#158020 removed `Py_FileSystemDefaultEncoding` from the
+  headers. The fix, python-cffi/cffi#287, is merged but not yet released.
 - **Mutation testing runs again, and a test catches the next gap on the pull request.** The run of
   2026-11-21 stopped: `tests/test_safe_chain.py`, since 2026-11-16, reads `.aikido`, which mutmut did
   not copy into `mutants/`. Behind it was a second gap the run never reached, since it stops at the
