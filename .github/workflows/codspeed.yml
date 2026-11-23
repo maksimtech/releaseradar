@@ -17,10 +17,17 @@ permissions:
 jobs:
   benchmarks:
     name: Run benchmarks
-    # Pinned to 24.04 like the other Radar, not ubuntu-26.04 like the rest of
-    # this repository's jobs: CodSpeedHQ/action v5 refuses 26.04 with
-    # `Unsupported system`. Worth trying 26.04 on a branch now and then.
-    runs-on: ubuntu-24.04
+    # The last job to move to ubuntu-26.04. It stayed on 24.04 when the rest
+    # moved on 2026-10-02: CodSpeedHQ/action v5 failed there with
+    # `##[error]Unsupported system`. CodSpeed's runner and action v5.5.0
+    # (2026-10-14) added Ubuntu 26.04 on x86_64 and arm64, so the action below
+    # moves from v5.4.2 to v5.6.3, the version the other Radars pin:
+    # https://github.com/CodSpeedHQ/runner/releases/tag/v5.5.0
+    #
+    # A named image, never `ubuntu-latest`: that label moves on GitHub's
+    # schedule, and a job that breaks then breaks on main at a moment nobody
+    # picked (tests/test_runners.py).
+    runs-on: ubuntu-26.04
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -41,7 +48,7 @@ jobs:
           pip install -e ".[dev]"  # NOSONAR - trusted internal project, no external setup scripts
           pip install pytest-codspeed --only-binary :all:
       - name: Run benchmarks
-        uses: CodSpeedHQ/action@f842b9a3ffe213dbb81768fd7f7eeb4dfcf1c369 # v5.4.2
+        uses: CodSpeedHQ/action@af75f77f17a054769abefaa42fe8dc2975469b5f # v5.6.3
         with:
           mode: simulation
           run: pytest tests/benchmarks/ --codspeed
