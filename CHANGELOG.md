@@ -9,6 +9,13 @@ the year is the generation shared by the five Radar and the count is this one's 
 
 ### Changed
 
+- **Every job runs on ubuntu-26.04, CodSpeed's too.** The benchmarks stayed on ubuntu-24.04 when the
+  other jobs moved on 2026-10-02, because CodSpeed's action failed on 26.04 with "Unsupported system".
+  CodSpeed's runner and action v5.5.0 (2026-10-14) support it, so the action moves from v5.4.2 to
+  v5.6.3 (released 2026-11-03), the version the other Radars pin. `tests/test_runners.py`, as in
+  apkradar, now fails if any job runs on another image or on `ubuntu-latest`, whose image changes on
+  GitHub's schedule.
+
 - **Python 3.15 is supported, and 3.16 is the row allowed to fail.** 3.15.0 went final on 2026-10-09;
   it moves from the experimental `3.15-dev` row to the stable matrix and to the classifiers, and
   `3.16-dev` takes its place as the one row with `continue-on-error`, as in apkradar. The matrix jobs
