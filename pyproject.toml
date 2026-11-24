@@ -69,6 +69,12 @@ Changelog = "https://github.com/maksimtech/releaseradar/blob/main/CHANGELOG.md"
 [tool.hatch.version]
 path = "releaseradar/__init__.py"
 
+# A release is locked only once it is 14 days old, whoever writes the lock:
+# Renovate's own wait does not reach `uv lock --upgrade-package`
+# (tests/test_dependency_age.py).
+[tool.uv]
+exclude-newer = "14 days"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
