@@ -173,7 +173,14 @@ notifica ai clienti, procedura di rollback. In sintesi:
   immutabile; il rollback consiste nel tornare a quel tag o a quel digest;
 - il workflow Docker è programmato per ricostruire `latest` ogni lunedì dall'ultimo
   tag, per incorporare le patch di sicurezza di Debian; al 2026-10-11 quella
-  ricostruzione non è ancora mai stata eseguita.
+  ricostruzione non è ancora mai stata eseguita;
+- dal 2026-11-24 gli aggiornamenti delle dipendenze li chiede Renovate
+  (`.github/renovate.json`), come in apkradar: ogni giovedì le dipendenze Python, `uv.lock` e
+  le GitHub Actions, prese almeno 14 giorni dopo l'uscita (la regola è anche in `uv`,
+  `[tool.uv] exclude-newer`); gli aggiornamenti per una vulnerabilità nota arrivano subito,
+  senza attesa. I limiti inferiori in `pyproject.toml` si alzano a mano, quando il codice ne
+  ha bisogno. Prima di quella data c'erano solo gli aggiornamenti di sicurezza di
+  Dependabot (per esempio la #32), nessun aggiornamento di versione.
 
 Contatto per le segnalazioni: <security@maksimtech.com>.
 
