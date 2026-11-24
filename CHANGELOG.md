@@ -9,6 +9,17 @@ the year is the generation shared by the five Radar and the count is this one's 
 
 ### Changed
 
+- **Every action is pinned to a commit, with its full version.** 27 uses in 9 workflows named moving
+  refs (`@v4`, `@v7`, and `@release/v1` in the job that holds the PyPI token). Their owners could
+  change what these jobs run without a pull request here. Each is now pinned to the commit its ref
+  pointed at on 2026-11-24, with the release beside it: checkout v7.0.1, setup-python v7.1.0,
+  upload-artifact v7.0.2, build-push v7.4.0, login v4.8.0, setup-buildx v4.4.1, setup-qemu v4.4.0,
+  gh-action-pypi-publish v1.14.3. codeql-action's `@v4` had moved that day to v4.39.5, younger than
+  the 14 days a dependency waits here: upload-sarif goes to v4.39.3, its newest release at least 14
+  days old and the one apkradar pins. One checkout already on a commit said only `# v7`; it now says
+  v7.0.1. Each commit was checked against its tag. `tests/test_actions_pinned.py`, mailradar's, keeps
+  it so.
+
 - **Every job runs on ubuntu-26.04, CodSpeed's too.** The benchmarks stayed on ubuntu-24.04 when the
   other jobs moved on 2026-10-02, because CodSpeed's action failed on 26.04 with "Unsupported system".
   CodSpeed's runner and action v5.5.0 (2026-10-14) support it, so the action moves from v5.4.2 to
