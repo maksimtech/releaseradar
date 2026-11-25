@@ -159,13 +159,46 @@ def test_the_backend_pyproject_names_is_one_of_them():
     assert set(BUILD_INPUT.read_text(encoding="utf-8").split()) == {"build", backend}
 
 
-def test_the_file_is_compiled_for_the_python_and_the_system_the_build_runs_on():
-    """Compiled on Windows without a platform, it would carry colorama, which
-    build wants on Windows only, and miss whatever Linux alone needs."""
+def header_arguments() -> list[str]:
     header = BUILD_REQUIREMENTS.read_text(encoding="utf-8").splitlines()[1]
+    command = header.removeprefix("#").split()
+    assert command[:3] == ["uv", "pip", "compile"], header
+    return command[3:]
+
+
+def test_the_file_is_compiled_for_the_python_the_build_runs_and_for_any_system():
+    """`--universal` keeps the file the same wherever it is compiled: colorama,
+    which build wants on Windows only, is in it under `os_name == 'nt'`, and pip
+    on the Linux runner skips it."""
+    arguments = header_arguments()
     setup = next(s for s in jobs()["build"]["steps"] if s.get("uses", "").startswith("actions/setup-python@"))
-    assert "uv pip compile --generate-hashes" in header
-    assert f"--python-version {setup['with']['python-version']}" in header
-    assert "--python-platform linux" in header
-    assert "--output-file .github/requirements-build.txt" in header
-    assert ".github/requirements-build.in" in header
+    assert "--generate-hashes" in arguments
+    assert "--universal" in arguments
+    assert f"--python-version={setup['with']['python-version']}" in arguments
+    assert "--output-file=.github/requirements-build.txt" in arguments
+    assert ".github/requirements-build.in" in arguments
+
+
+# What Renovate's pip-compile manager accepts in a `uv pip compile` header
+# (renovatebot/renovate, lib/modules/manager/pip-compile/common.ts). Anything
+# else, or an option whose argument follows a space instead of `=`, and it
+# skips the file with "pip-compile error": the first header here had
+# `--python-platform linux` and `--python-version 3.12`, and on 2026-11-25 the
+# Dependency Dashboard (#71) reported exactly that.
+RENOVATE_UV_FLAGS = {"--no-strip-extras", "--universal", "-v", "--generate-hashes", "--emit-index-url", "--all-extras"}
+RENOVATE_UV_WITH_ARGUMENT = {
+    "--constraints", "--constraint", "--python-version", "--no-emit-package", "--prerelease", "--format",
+    "--resolution", "--fork-strategy", "--exclude-newer", "--exclude-newer-package", "--group", "--override",
+    "--overrides", "--output-file", "--extra", "--extra-index-url", "--index-url",
+}
+
+
+def test_renovate_can_read_the_header():
+    for argument in header_arguments():
+        if not argument.startswith("-"):
+            continue
+        option, equals, _ = argument.partition("=")
+        if option in RENOVATE_UV_WITH_ARGUMENT:
+            assert equals, f"{option} needs '=' before its argument for Renovate"
+        else:
+            assert option in RENOVATE_UV_FLAGS and not equals, f"Renovate does not accept {argument}"

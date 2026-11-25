@@ -113,6 +113,12 @@ the year is the generation shared by the five Radar and the count is this one's 
   build. The GPG signature of the distributions is gone: PyPI dropped it on upload ("silently
   ignored by the index", twine on v2026.8), the Sigstore attestation remains, and the private key
   no longer enters the job. `tests/test_publish_contract.py` holds the layout.
+
+  The first header of `requirements-build.txt` was one Renovate could not read: it wrote
+  `--python-version 3.12` with a space and named `--python-platform linux`, and the Dependency
+  Dashboard (#71) reported "pip-compile error". The file is now compiled with `--universal` and
+  `--option=value` arguments, and a test holds the header to what Renovate's pip-compile manager
+  accepts.
 - **The three open OpenSSL entries now state OpenSSL's advisory of 2026-11-24.** The entries for
   CVE-2026-107494 (QUIC), CVE-2026-84786 (DANE) and CVE-2026-121482 (CRL distribution points) said
   there was no OpenSSL advisory yet. Since that morning `secadv/20261124.txt` rates all three Low and
