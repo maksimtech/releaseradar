@@ -88,7 +88,8 @@ def test_the_jobs_that_install_are_the_ones_expected():
         "codspeed.yml:benchmarks",
         "licenses.yml:licenses",
         "mutation.yml:mutmut",
-        "publish.yml:build-and-publish",
+        "publish.yml:build",
+        "publish.yml:verify",
         "quality.yml:quality",
         "sbom.yml:evidence",
         "sonarcloud.yml:sonarcloud",
@@ -173,12 +174,21 @@ def test_no_build_runs_in_an_isolation_safe_chain_cannot_see():
 
 
 def test_the_backend_a_build_needs_is_installed_through_the_shim_first():
-    job = yaml.safe_load((WORKFLOWS / "publish.yml").read_text(encoding="utf-8"))["jobs"]["build-and-publish"]
+    """By pip, from the hash-pinned file that names it (tests/test_publish_contract.py)."""
+    job = yaml.safe_load((WORKFLOWS / "publish.yml").read_text(encoding="utf-8"))["jobs"]["build"]
     runs = [_code(s.get("run", "")) for s in job["steps"]]
     build = next(i for i, r in enumerate(runs) if re.search(r"\bpython3?\s+-m\s+build\b", r))
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     backend = re.search(r'requires\s*=\s*\["([A-Za-z0-9_.-]+)', pyproject).group(1)
-    installs = [i for i, r in enumerate(runs) if BY_NAME.search(r) and backend in r]
+    files = {
+        i: ROOT / match.group(1)
+        for i, r in enumerate(runs)
+        if BY_NAME.search(r) and (match := re.search(r"-r\s+(\S+)", r))
+    }
+    installs = [
+        i for i, path in files.items()
+        if re.search(rf"^{re.escape(backend)}==", path.read_text(encoding="utf-8"), re.MULTILINE)
+    ]
     assert installs and installs[0] < build, f"{backend} is not installed by pip before the build"
 
 

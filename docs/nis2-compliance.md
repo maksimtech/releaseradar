@@ -35,7 +35,10 @@ web locale (`releaseradar web`) e come server MCP (`releaseradar mcp`).
   PEP 740 firmata con Sigstore dal workflow di pubblicazione `publish.yml`; le immagini
   su Docker Hub (`maksimtech/releaseradar`) hanno un'attestazione di provenienza SLSA
   generata da BuildKit al momento del push. Entrambe verificate il 2026-10-11 su tutte
-  le versioni pubblicate, dalla 2026.1 alla 2026.5.
+  le versioni pubblicate, dalla 2026.1 alla 2026.5. Dalle release successive al
+  2026-11-25 il pacchetto è costruito in un job senza il token di PyPI, con strumenti
+  di build fissati per hash, e caricato da un job che non installa né esegue nulla:
+  l'unico che può ottenere quel token (`tests/test_publish_contract.py`).
 - Licenze: il workflow License Check fallisce se una dipendenza dell'installazione
   base dichiara una licenza GPL, AGPL o LGPL. Le dipendenze che l'extra `[mcp]`
   aggiunge non sono controllate da quel workflow; il 2026-10-11 lo stesso controllo,
