@@ -9,6 +9,13 @@ the year is the generation shared by the five Radar and the count is this one's 
 
 ### Changed
 
+- **Renovate's weekly batch can arrive at any hour of Thursday, not only before 6am.**
+  On 2026-11-26 the window opened no pull request here: the Mend-hosted app runs a repository that
+  has not merged a Renovate pull request yet once a day, at an hour it picks, and that run fell
+  outside it. apkradar, which has, is run every four hours and got its batch at 00:27.
+  A whole day holds a daily run whatever its hour, and the batch still lands the day before the
+  Friday release. Written in cron (`* * * * 4`), which Renovate recommends over the words it used
+  to parse (`tests/test_renovate_config.py`).
 - **Renovate asks for the dependency updates, as in apkradar.** Until now releaseradar had none:
   no `.github/dependabot.yml`, only Dependabot's security updates. `.github/renovate.json` is
   apkradar's:
