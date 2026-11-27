@@ -126,6 +126,13 @@ the year is the generation shared by the five Radar and the count is this one's 
   `[link=https://example.com]x[/link]` printed a hyperlink the title's author chose. They are escaped
   where they are printed: the events of `sync`, `status`, the `events` and `notify` tables, the
   warnings, and every error line (`_fail` escapes what it prints, so a caller can no longer forget).
+- **A local clock ahead of GitHub's no longer loses what changed in the gap (#56).** `last_synced_at`
+  is the local clock, and was sent to GitHub as `since`: a clock ahead by δ (0.7–1.6 s measured here)
+  skipped what changed in those δ seconds, for good. The pull-request walk cut it, and an item first
+  seen closed inside the gap was taken as closed before the last sync and recorded without an event.
+  A sync now asks from `SINCE_MARGIN` (5 minutes) before the stored time, for both. What it sees
+  twice is dropped by the state comparison, and an item closed long before still makes no event. A
+  stored time in another ISO form (fractions of a second, `+00:00`, SQLite's space) is read too.
 
 ### Security
 

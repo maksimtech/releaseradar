@@ -13,7 +13,7 @@ import json
 import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from . import db as _db
@@ -65,8 +65,32 @@ def untrack_invalid(db_path: Path) -> list[str]:
     return removed
 
 
+_STAMP = "%Y-%m-%dT%H:%M:%SZ"
+
+# How much earlier than the stored `last_synced_at` a sync asks GitHub from
+# (#56). That time is the local clock's, and a clock ahead of GitHub's by δ
+# skipped what changed in those δ seconds, for good (0.7–1.6 s measured here;
+# a machine that has not synchronised for a while drifts further). Asking a
+# little more costs a few items, which the state comparison drops as already seen.
+SINCE_MARGIN = timedelta(minutes=5)
+
+
 def _now() -> str:
-    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(UTC).strftime(_STAMP)
+
+
+def _asked_since(stored: str | None) -> str | None:
+    """`stored` moved back by SINCE_MARGIN, in GitHub's form; None stays None.
+
+    Read with fromisoformat, so a time an earlier version wrote with fractions of
+    a second or `+00:00` is read too; one with no offset is taken as UTC, which is
+    what every version wrote."""
+    if stored is None:
+        return None
+    when = datetime.fromisoformat(stored)
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=UTC)
+    return (when.astimezone(UTC) - SINCE_MARGIN).strftime(_STAMP)
 
 
 def _issue_kind(state: str) -> str:
@@ -169,7 +193,10 @@ def sync_repo(owner: str, name: str, token: str | None = None,
     if repo is None:
         raise NotTracked(f"{owner}/{name} is not being tracked; run `releaseradar track {owner}/{name}` first.")
     repo_id = int(repo["id"])
-    since = repo["last_synced_at"]
+    # From SINCE_MARGIN before the stored time, both for what is asked of GitHub
+    # and for what counts as closed before the last sync: an item closed in the
+    # gap a clock ahead opens is news, not history (#56).
+    since = _asked_since(repo["last_synced_at"])
     seeding = since is None
     started = _now()
 

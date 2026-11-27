@@ -89,8 +89,12 @@ class TestLaterSyncs:
 
         sync_repo("psf", "requests", db_path=db_path)
 
+        from releaseradar.sync import SINCE_MARGIN
+
         params = routes["issues"].calls.last.request.url.params
-        assert params["since"] == first
+        # From SINCE_MARGIN before the last sync, for a local clock ahead of GitHub's (#56)
+        stored = datetime.strptime(first, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
+        assert params["since"] == (stored - SINCE_MARGIN).strftime("%Y-%m-%dT%H:%M:%SZ")
         assert params["state"] == "all", "closed since the last sync is where the transitions are"
         assert routes["pulls"].calls.last.request.url.params["state"] == "all"
 
@@ -178,6 +182,75 @@ class TestLaterSyncs:
 
         assert events == []
         assert database.repo_summary("maksimtech", "cookieradar")["latest_release"]["tag_name"] == "v2026.44"
+
+
+class TestALocalClockAhead:
+    """#56: `last_synced_at` is the local clock, and is sent to GitHub as `since`. A
+    clock ahead by δ skipped whatever changed in those δ seconds, for good: the
+    pull-request walk cut it, and an item first seen closed inside the gap was
+    taken as "closed before the last sync" and recorded without an event. Measured
+    here: 0.7–1.6 s. The sync now asks from `SINCE_MARGIN` earlier; the state
+    comparison drops what it sees twice."""
+
+    STORED = "2026-11-27T10:00:00Z"
+    A_SECOND_BEFORE = "2026-11-27T09:59:59Z"
+
+    def _after_a_first_sync(self, db_path, github):
+        base = f"{API}/repos/psf/requests"
+        routes = {kind: github.get(f"{base}/{kind}").mock(return_value=empty_page())
+                  for kind in ("issues", "pulls", "releases")}
+        database = track(db_path, "psf", "requests")
+        sync_repo("psf", "requests", db_path=db_path)
+        database.set_last_synced(database.get_repo_id("psf", "requests"), self.STORED)
+        return routes
+
+    def _item(self, number, state, when, **extra):
+        return {"number": number, "title": f"item {number}", "state": state, "created_at": "2026-11-20T00:00:00Z",
+                "updated_at": when, "closed_at": when if state == "closed" else None,
+                "html_url": f"https://github.com/psf/requests/issues/{number}", **extra}
+
+    def test_github_is_asked_from_the_margin_before_the_stored_time(self, db_path, github):
+        from releaseradar.sync import SINCE_MARGIN
+
+        routes = self._after_a_first_sync(db_path, github)
+        sync_repo("psf", "requests", db_path=db_path)
+        expected = (datetime(2026, 11, 27, 10, tzinfo=UTC) - SINCE_MARGIN).strftime("%Y-%m-%dT%H:%M:%SZ")
+        assert routes["issues"].calls.last.request.url.params["since"] == expected
+        assert timedelta(seconds=2) <= SINCE_MARGIN
+
+    @pytest.mark.parametrize("stored", ["2026-11-27T10:00:00.123456+00:00", "2026-11-27 10:00:00",
+                                        "2026-11-27T11:00:00+01:00"])
+    def test_a_stored_time_in_another_iso_form_is_read_too(self, db_path, github, stored):
+        from releaseradar.sync import SINCE_MARGIN
+
+        routes = self._after_a_first_sync(db_path, github)
+        database = _db.open_db(db_path)
+        database.set_last_synced(database.get_repo_id("psf", "requests"), stored)
+        sync_repo("psf", "requests", db_path=db_path)
+        since = routes["issues"].calls.last.request.url.params["since"]
+        assert since == (datetime(2026, 11, 27, 10, tzinfo=UTC) - SINCE_MARGIN).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    def test_a_pull_request_updated_a_second_before_the_stored_time_is_seen(self, db_path, github):
+        routes = self._after_a_first_sync(db_path, github)
+        routes["pulls"].mock(return_value=httpx.Response(
+            200, json=[self._item(9001, "open", self.A_SECOND_BEFORE, merged_at=None, body="")]))
+        events = sync_repo("psf", "requests", db_path=db_path)
+        assert events == [{"kind": "pr_opened", "number": 9001, "title": "item 9001"}]
+
+    def test_an_issue_closed_a_second_before_the_stored_time_is_news(self, db_path, github):
+        routes = self._after_a_first_sync(db_path, github)
+        routes["issues"].mock(return_value=httpx.Response(
+            200, json=[self._item(9002, "closed", self.A_SECOND_BEFORE)]))
+        events = sync_repo("psf", "requests", db_path=db_path)
+        assert events == [{"kind": "issue_closed", "number": 9002, "title": "item 9002"}]
+
+    def test_an_issue_closed_an_hour_before_is_still_not_news(self, db_path, github):
+        """What `_closed_before` is for stays: closed long before anyone watched,
+        brought back by a comment, it is recorded and not announced."""
+        routes = self._after_a_first_sync(db_path, github)
+        routes["issues"].mock(return_value=httpx.Response(
+            200, json=[self._item(9003, "closed", "2026-11-27T09:00:00Z")]))
+        assert sync_repo("psf", "requests", db_path=db_path) == []
 
 
 class TestRefusals:
