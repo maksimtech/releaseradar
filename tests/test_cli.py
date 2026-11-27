@@ -344,18 +344,18 @@ class TestNotify:
 
 
 class TestMcpCommand:
-    def test_the_install_hint_survives_rich_markup(self):
+    def test_the_install_hint_survives_rich_markup(self, capsys):
         """Seen on the first PyPI install: `pip install 'releaseradar[mcp]'` came out as
-        `pip install 'releaseradar'`, rich having eaten `[mcp]` as a style tag."""
-        from io import StringIO
+        `pip install 'releaseradar'`, rich having eaten `[mcp]` as a style tag. The hint
+        was escaped by hand; since #55 `_fail` escapes whatever it prints, and the hint
+        is written as it reads."""
+        import typer
 
-        from rich.console import Console
+        from releaseradar.cli import MCP_MISSING, _fail
 
-        from releaseradar.cli import MCP_MISSING
-
-        out = StringIO()
-        Console(file=out, width=200, force_terminal=False).print(MCP_MISSING)
-        assert "pip install 'releaseradar[mcp]'" in out.getvalue()
+        with pytest.raises(typer.Exit):
+            _fail(MCP_MISSING)
+        assert "pip install 'releaseradar[mcp]'" in flat(capsys.readouterr().out)
 
     def test_help_lists_the_mcp_command(self):
         result = runner.invoke(app, ["--help"])
@@ -396,3 +396,53 @@ class TestSyncOutputWhenThingsFail:
         assert result.exit_code == 0, result.output
         assert "pull requests" in result.output
         assert "Nothing new" in result.output
+
+
+class TestGitHubTextIsNotMarkup:
+    """#55: issue and PR titles and release names are written by anyone on GitHub,
+    and were printed as rich markup. `[/]` raised MarkupError after the events
+    were committed, `[docs]` and `array[i]` lost their brackets, and `[link=…]`
+    made a hyperlink the title's author chose."""
+
+    TITLES = ["[/] stray closing tag", "[docs] Fix typo", "array[i] out of range",
+              "[link=https://example.com]x[/link]"]
+    RELEASE_NAME = "[bold]1.0[/bold] [/]"
+
+    def _second_sync(self, db_path, github):
+        from tests.conftest import empty_page
+
+        github.get(f"{API}/repos/maksimtech/codecov-mcp").mock(return_value=replay("gh_codecov-mcp_repo.json"))
+        routes = route_repo(github, "maksimtech", "codecov-mcp", empty_page(), empty_page(), empty_page())
+        when = "2026-11-27T10:00:00Z"
+        issues = [{"number": number, "title": title, "state": "open", "created_at": when, "updated_at": when,
+                   "closed_at": None, "html_url": f"https://github.com/maksimtech/codecov-mcp/issues/{number}"}
+                  for number, title in enumerate(self.TITLES, 1)]
+        release = {"tag_name": "v1.0", "name": self.RELEASE_NAME, "published_at": when, "prerelease": False,
+                   "draft": False, "body": "", "html_url": "https://github.com/maksimtech/codecov-mcp/releases/v1.0"}
+        routes["issues"].side_effect = [empty_page(), httpx.Response(200, json=issues)]
+        routes["pulls"].side_effect = [empty_page(), empty_page()]
+        routes["releases"].side_effect = [empty_page(), httpx.Response(200, json=[release])]
+        tracked(db_path)
+        assert runner.invoke(app, ["sync", "maksimtech/codecov-mcp"]).exit_code == 0
+        return runner.invoke(app, ["sync", "maksimtech/codecov-mcp"])
+
+    def test_titles_and_release_names_are_printed_as_written(self, db_path, github):
+        result = self._second_sync(db_path, github)
+        assert result.exit_code == 0, result.output
+        out = flat(result.output)
+        for title in self.TITLES:
+            assert title in out, out
+        assert self.RELEASE_NAME in out, out
+
+    def test_a_warning_from_github_is_printed_as_written(self, capsys):
+        from releaseradar.cli import _print_warnings
+        _print_warnings(["o/r: releases read up to GitHub's limit — Only the first [/] results [b]are[/b] shown"])
+        assert "Only the first [/] results [b]are[/b] shown" in flat(capsys.readouterr().out)
+
+    def test_an_error_message_is_printed_as_written(self, capsys):
+        import typer
+
+        from releaseradar.cli import _fail
+        with pytest.raises(typer.Exit):
+            _fail("GitHub said [/] and [link=https://example.com]x[/link]")
+        assert "GitHub said [/] and [link=https://example.com]x[/link]" in flat(capsys.readouterr().out)

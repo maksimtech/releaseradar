@@ -29,7 +29,7 @@ _TOKEN_ENV = "GITHUB_TOKEN"
 
 # Printed through rich, where `[mcp]` is a style tag and disappears: the one
 # install command in the message is the one that would vanish without escaping.
-MCP_MISSING = r"the MCP server needs the `mcp` package: pip install 'releaseradar\[mcp]'."
+MCP_MISSING = "the MCP server needs the `mcp` package: pip install 'releaseradar[mcp]'."
 
 _ICONS = {
     "issue_opened": "🐛",
@@ -51,7 +51,9 @@ def _db_path() -> Path:
 
 
 def _fail(message: str) -> NoReturn:
-    rprint(f"[red]Error:[/red] {message}")
+    """Exit 1 with `message`, printed as text: it quotes names, GitHub's answers and
+    exceptions, none of which is markup (#55)."""
+    rprint(f"[red]Error:[/red] {escape(message)}")
     raise typer.Exit(1)
 
 
@@ -60,8 +62,8 @@ def _split(repo: str, hint: str = "") -> tuple[str, str]:
     try:
         return gh.split_repo(repo)
     except gh.InvalidRepoName as exc:
-        # The refusal quotes the name, and `[/b]` in it is markup to rich.
-        _fail(escape(f"{exc} {hint}".rstrip()))
+        # The refusal quotes the name, and `[/b]` in it would be markup to rich: _fail escapes it.
+        _fail(f"{exc} {hint}".rstrip())
 
 
 # ── version ──────────────────────────────────────────────────────────────────
@@ -229,7 +231,7 @@ def sync(
 
 def _print_warnings(warnings: list[str]) -> None:
     for message in warnings:
-        rprint(f"[yellow]![/yellow] {message}")
+        rprint(f"[yellow]![/yellow] {escape(message)}")
 
 
 def _print_events(results: dict[str, list[dict]]) -> None:
@@ -241,13 +243,14 @@ def _print_events(results: dict[str, list[dict]]) -> None:
     for repo_key, events in results.items():
         if not events:
             continue
-        rprint(f"\n[bold cyan]{repo_key}[/bold cyan]")
+        rprint(f"\n[bold cyan]{escape(repo_key)}[/bold cyan]")
         for e in events:
             icon = _ICONS.get(e["kind"], "•")
             if e["kind"] == "release_published":
-                rprint(f"  {icon} [bold green]{e['tag']}[/bold green] — {e['name']}")
+                # Tags, names and titles come from GitHub, written by anyone (#55)
+                rprint(f"  {icon} [bold green]{escape(e['tag'])}[/bold green] — {escape(e['name'])}")
             else:
-                rprint(f"  {icon} #{e.get('number', '')} {e['title'][:72]}")
+                rprint(f"  {icon} #{e.get('number', '')} {escape(e['title'][:72])}")
 
 
 # ── status ────────────────────────────────────────────────────────────────────
@@ -269,7 +272,7 @@ def status(
     rprint(f"  Open PRs    : [blue]{summary['open_prs']}[/blue]")
     if summary["latest_release"]:
         rel = summary["latest_release"]
-        rprint(f"  Latest      : [green]{rel['tag_name']}[/green] ({rel['published_at'][:10]})")
+        rprint(f"  Latest      : [green]{escape(rel['tag_name'])}[/green] ({rel['published_at'][:10]})")
     else:
         rprint("  Latest      : [dim]no release yet[/dim]")
     synced = summary.get("last_synced_at")
@@ -288,7 +291,7 @@ def _events_table(rows) -> Table:
     for r in rows:
         notified = "✓" if r["notified"] else "○"
         ref = r["ref_tag"] or (f"#{r['ref_number']}" if r["ref_number"] else "—")
-        table.add_row(r["seen_at"][:16], f"{r['owner']}/{r['name']}", r["kind"], ref, notified)
+        table.add_row(r["seen_at"][:16], escape(f"{r['owner']}/{r['name']}"), r["kind"], escape(ref), notified)
     return table
 
 
