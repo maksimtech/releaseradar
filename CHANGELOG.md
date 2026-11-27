@@ -118,6 +118,15 @@ the year is the generation shared by the five Radar and the count is this one's 
   up. The test that required the token now requires OIDC and forbids the secret
   (`tests/test_ci_contract.py`). Same as maksimtech/mailradar#135 and the others.
 
+### Fixed
+
+- **What GitHub sends is printed as text, not as rich markup (#55).** Issue and pull request titles,
+  release names and tags are written by anyone. A title with `[/]` raised `MarkupError` after the sync
+  had committed its events, `[docs] Fix typo` and `array[i]` lost their brackets, and
+  `[link=https://example.com]x[/link]` printed a hyperlink the title's author chose. They are escaped
+  where they are printed: the events of `sync`, `status`, the `events` and `notify` tables, the
+  warnings, and every error line (`_fail` escapes what it prints, so a caller can no longer forget).
+
 ### Security
 
 - **The job PyPI trusts installs and runs nothing.** `publish.yml` had one job that held
