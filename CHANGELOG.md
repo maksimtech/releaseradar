@@ -136,6 +136,19 @@ the year is the generation shared by the five Radar and the count is this one's 
 
 ### Security
 
+- **A version from a tag or the dispatch form reaches a script as a string, and only if it is a
+  release tag (#85, maksimtech/apkradar#151).**
+  - `docker.yml` pasted the version typed into the dispatch form straight into bash
+    (`RAW="${{ github.event.inputs.version }}"`), then into Python code (`python3 -c
+    "parts='${STRIPPED}'…"`), after the Docker Hub login: a `'` in a tag or an input became code
+    next to the credentials, and a newline in an input became outputs and image tags of its own.
+  - Every step that turns a tag or an input into a version (`docker.yml`, `publish.yml`'s verify,
+    `docker-build-check.yml`) now reads it through `env:` and refuses anything that is not a release
+    tag, before writing it anywhere. The normalised version is computed after that, from an argument.
+    `docker.yml` decides the version before the login, and drops `PIP_VERSION`, which nothing read.
+  - `tests/test_workflow_inputs.py`, the same in all six Radars, holds all of it: no `${{ }}` from
+    outside in a `run:`, no shell variable inside a `python -c` string, the check before the first
+    output, and the version before the login.
 - **The job PyPI trusts installs and runs nothing.** `publish.yml` had one job that held
   `id-token: write` while it installed the newest `build` and `hatchling` of that minute and, after
   the upload, installed the release with all its runtime dependencies from PyPI. A package
