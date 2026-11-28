@@ -3,9 +3,15 @@
 ## Reporting a vulnerability
 
 Write to <security@maksimtech.com>; the GPG key for that address is on
-keys.openpgp.org. Please do not open a public issue for a vulnerability.
+keys.openpgp.org. GitHub's private vulnerability reporting is also open on this
+repository: <https://github.com/maksimtech/releaseradar/security/advisories/new>.
+Please do not open a public issue for a vulnerability.
 
-ReleaseRadar has a single maintainer, Massimo Moretti, who reads that address.
+Reports are acknowledged within 7 days, and a vulnerability is disclosed in
+coordination with the reporter, who is credited in the advisory and the
+CHANGELOG if they wish.
+
+ReleaseRadar has a single maintainer, Massimo Moretti, who reads both.
 
 ## Supported versions
 
@@ -45,7 +51,7 @@ The details, host by host and table by table, are in
   date and not by commit. On a pull request that ref is the pull request's own (until
   2026-10-11 it was `main`'s): CodeQL reports there only what the change introduces,
   and Docker Scout does not run, so the image is checked on `main`.
-- Reports sent to the address above.
+- Reports sent through either channel above.
 
 ## Response times
 
