@@ -136,6 +136,13 @@ the year is the generation shared by the five Radar and the count is this one's 
 
 ### Security
 
+- **One private reporting channel on GitHub, the same in every Radar (#87, maksimtech/apkradar#153).** GitHub's private vulnerability reporting is open on this repository since 2026-11-28, next to
+  <security@maksimtech.com> with its GPG key, and `SECURITY.md` links it
+  (`https://github.com/maksimtech/releaseradar/security/advisories/new`).
+  Reports are acknowledged within 7 days, and a vulnerability is disclosed in coordination with the
+  reporter, who is credited in the advisory and the CHANGELOG if they wish.
+  `tests/test_security_policy.py`, the same in all six, holds the two channels, that line, and a
+  report link that names this repository and no other.
 - **A version from a tag or the dispatch form reaches a script as a string, and only if it is a
   release tag (#85, maksimtech/apkradar#151).**
   - `docker.yml` pasted the version typed into the dispatch form straight into bash
